@@ -651,7 +651,9 @@
     const f = state.flags;
     if (editorSpecies !== ind.sp) { buildEditorForSpecies(ind.sp); editorSpecies = ind.sp; }
     $('inSpecies').value = ind.sp.ja;
-    $('speciesHint').textContent = f.species ? '読み取りが不確かです。合っているか確認してください。' : `${SPEC_TYPE[ind.sp.spec]}・${PSE.SKILL_JA[ind.sp.skill] || ''}`;
+    $('speciesHint').textContent = f.species
+      ? (state.speciesCands ? `候補: ${state.speciesCands.map((x) => x.ja).join('・')}（数値が同じで区別できません）` : '読み取りが不確かです。合っているか確認してください。')
+      : `${SPEC_TYPE[ind.sp.spec]}・${PSE.SKILL_JA[ind.sp.skill] || ''}`;
     $('inLevel').value = ind.level;
     $('inSkill').value = String(Math.min(ind.skillLevelShown || 1, PSE.maxSkillLevel(ind.sp.skill)));
     $('inNature').value = String(ind.nature.i);
@@ -959,6 +961,7 @@
       for (const sp of list) {
         const sls = flags.skill ? range(PSE.maxSkillLevel(sp.skill)) : [Math.min(ind.skillLevelShown || 1, PSE.maxSkillLevel(sp.skill))];
         for (const nature of natures) for (const level of levels) for (const skillLevelShown of sls) {
+          if (ind.carryShown && !carryFits(sp, PSE.sumSubs(PSE.activeSubs(ind.subs, level)), ind.carryShown)) continue;
           for (const slots of slotCombos(sp, level, sp === ind.sp ? ind.slots : null)) {
             const x = Object.assign({}, ind, { sp, nature, level, skillLevelShown, slots });
             if (spMatches(x)) out.push(x);
@@ -987,7 +990,8 @@
       if (PSE.slotOptions(best.sp, i).length <= 1) { delete f['ing' + i]; return; }
       if (best.level >= [1, 30, 60][i]) setFlag('ing' + i, !uniq((x) => x.slots[i] && x.slots[i].name + x.slots[i].count));
     });
-    return { ind: best, flags: f };
+    const cands = [...new Set(found.map((x) => x.sp))];
+    return { ind: best, flags: f, speciesCands: cands.length > 1 ? cands : null };
   }
 
   // No SP on screen: the species can still be told apart by its help time and carry limit.
@@ -1062,6 +1066,7 @@
       ind = res.ind;
       flags = res.flags;
     }
+    state.speciesCands = res && res.speciesCands ? res.speciesCands : null;
     if (!ind.sp) {
       state.pending = { ind, flags, data };
       setStatus('ポケモンの種類を特定できませんでした。下の「読み取り結果を直す・手入力する」でポケモンを選ぶと、読み取った内容で評価します。', 'error');
@@ -1087,8 +1092,9 @@
     state.evalLevel = ind.level >= 60 ? 70 : 60;
     const unsure = Object.keys(flags).filter((k) => !/^ing/.test(k) || ind.level >= [1, 30, 60][+k.slice(3)]).length;
     const spNote = ind.spShown ? (spMatches(ind) ? 'SPも計算と一致しました。' : 'SPが計算と合いません。下の「読み取りチェック」を見てください。') : 'SPが読めなかったので、照合はしていません。';
+    const candNote = state.speciesCands ? `ポケモンは ${state.speciesCands.map((x) => x.ja).join('・')} のどれかで、数値だけでは区別できません。違うときは選び直してください。` : '';
     setStatus(unsure
-      ? `読み取りました。${spNote}確認してほしい項目が${unsure}つあります（「読み取り結果を直す」のオレンジ色の欄）。`
+      ? `読み取りました。${spNote}${candNote}確認してほしい項目が${unsure}つあります（「読み取り結果を直す」のオレンジ色の欄）。`
       : `読み取りました。${spNote}`, 'ok');
     fillEditor();
     state.historyT = ind.sp.supported ? saveHistory(ind) : null;
