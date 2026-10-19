@@ -1,6 +1,6 @@
 /* Offline support. The app shell is network-first (so updates arrive when online);
  * the OCR engine and Japanese model are cache-first (large and versioned by path). */
-const VERSION = '2026-10-20.1';
+const VERSION = '2026-10-20.2';
 const SHELL_CACHE = 'shell-' + VERSION;
 const BIG_CACHE = 'ocr-tesseract-5.1.1';
 const FONT_CACHE = 'fonts-v1';

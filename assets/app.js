@@ -910,8 +910,18 @@
       skillLevelBase: Math.max(1, (x.skillLevelShown || 1) - tot.slu),
     });
     if (r.rp !== x.spShown) return false;
-    if (x.helpTimeShown && Math.abs(Math.floor(r.freq) - x.helpTimeShown) > 1) return false;
+    if (x.helpTimeShown && !timeMatches(x, tot)) return false;
     return true;
+  }
+  // help time on screen, with or without the Pokémon's own Helping Bonus
+  function timeMatches(x, tot) {
+    const f = (hb) => Math.floor(PSE.frequency(x.sp, x.level, x.nature, tot, x.ribbon || 0, hb));
+    return Math.abs(f(0) - x.helpTimeShown) <= 1 || (tot.hb > 0 && Math.abs(f(1) - x.helpTimeShown) <= 1);
+  }
+  function carryFits(sp, tot, carryShown) {
+    if (!carryShown) return true;
+    const d = carryShown - (sp.carry + 5 * Math.max(0, sp.ev) + 6 * tot.inv);
+    return [0, 1, 3, 6, 8].some((r) => d - r <= 0 && (d - r) % 5 === 0);
   }
   function slotCombos(sp, level, current) {
     const opts = [0, 1, 2].map((i) => {
@@ -929,7 +939,6 @@
   }
   // Search the readings that reproduce the SP (and help time) shown on screen.
   function resolveReading(ind, flags, data) {
-    if (!ind.spShown) return null;
     const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
     const eff = data.effectsSeen || [];
     let natures = [ind.nature];
@@ -940,6 +949,7 @@
       if (!natures.length) natures = PSE.NATURES;
     }
     const levels = [ind.level, ...(data.levelCandidates || [])].filter((v, i, a) => v >= 1 && v <= 100 && a.indexOf(v) === i);
+    if (!ind.spShown) return resolveWithoutSP(ind, flags, data, natures, levels);
     const search = (list) => {
       const out = [];
       for (const sp of list) {
@@ -974,6 +984,28 @@
       if (best.level >= [1, 30, 60][i]) setFlag('ing' + i, !uniq((x) => x.slots[i] && x.slots[i].name + x.slots[i].count));
     });
     return { ind: best, flags: f };
+  }
+
+  // No SP on screen: the species can still be told apart by its help time and carry limit.
+  function resolveWithoutSP(ind, flags, data, natures, levels) {
+    if (!ind.helpTimeShown || (ind.sp && !flags.species) || data.lockSpecies) return null;
+    const skill = data.mainSkillName ? norm(data.mainSkillName) : null;
+    const hits = new Map();
+    for (const sp of PSE.SPECIES) {
+      if (!sp.supported || (skill && !skillNamesOf(sp.skill).includes(skill))) continue;
+      for (const nature of natures) for (const level of levels) {
+        const tot = PSE.sumSubs(PSE.activeSubs(ind.subs, level));
+        const x = { sp, level, nature, ribbon: ind.ribbon || 0, helpTimeShown: ind.helpTimeShown };
+        if (timeMatches(x, tot) && carryFits(sp, tot, ind.carryShown) && !hits.has(sp)) hits.set(sp, { nature, level });
+      }
+    }
+    if (hits.size !== 1) return null;
+    const [[sp, v]] = [...hits];
+    const f = Object.assign({}, flags, { species: true });
+    const slots = defaultSlots(sp);
+    [0, 1, 2].forEach((i) => { if (PSE.slotOptions(sp, i).length > 1) f['ing' + i] = true; });
+    applyCounts(sp, slots, f, data.ingredients);
+    return { ind: Object.assign({}, ind, { sp, slots, nature: v.nature, level: v.level }), flags: f };
   }
 
   // Carry limit on screen: lower by 5 per evolution if caught already evolved, higher with a Good Night Ribbon.

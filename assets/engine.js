@@ -636,7 +636,7 @@ const PSE = (function () {
   }
 
   return {
-    loadData, evaluate, checkReading, computeSP, slotOptions, sumSubs, activeSubs, value, makeContext, energyProfile, deriveBase,
+    loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energyProfile, deriveBase,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },

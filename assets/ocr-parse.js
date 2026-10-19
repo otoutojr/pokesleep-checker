@@ -266,10 +266,19 @@
       if (m && +m[1] >= 5 && +m[1] <= 200 && (!out.debug.helpLineY || cy(l.bbox) > out.debug.helpLineY)) { out.carry = +m[1]; break; }
     }
 
-    // ---- SP ----
-    for (const l of lines.filter(inTop).sort((a, b) => a.bbox.y0 - b.bbox.y0)) {
-      const m = l.text.match(/[S5$]P(\d{2,5})/);
-      if (m) { out.sp = +m[1]; out.debug.spY = cy(l.bbox); break; }
+    // ---- SP (1,000 and up is shown with a comma: "6,332") ----
+    const topLines = lines.filter(inTop).sort((a, b) => a.bbox.y0 - b.bbox.y0);
+    const spNum = (s) => +s.replace(/[^\d]/g, '');
+    for (const l of topLines) {
+      const m = l.text.match(/[S5$][PR][^\d]{0,2}(\d{1,3}(?:[,.、，]\d{3})+|\d{2,5})(?!\d)/);
+      if (m && spNum(m[1]) >= 100) { out.sp = spNum(m[1]); out.debug.spY = cy(l.bbox); break; }
+    }
+    if (out.sp == null) {
+      // the "SP" label itself can be lost; a comma-grouped number in the name card is still the SP
+      for (const l of topLines) {
+        const m = l.text.match(/(?:^|[^\d,.])(\d{1,2}[,.、，]\d{3})(?![\d,.])/);
+        if (m && spNum(m[1]) >= 1000) { out.sp = spNum(m[1]); out.debug.spY = cy(l.bbox); break; }
+      }
     }
 
     // ---- species ----
