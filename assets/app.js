@@ -185,7 +185,11 @@
   const fmt2 = (x) => (Math.round(x * 100) / 100).toFixed(2);
   const fmtNice = (x) => (Math.abs(x) >= 100 ? fmtInt(x) : Math.abs(x) >= 10 ? fmt1(x) : String(Math.round(x * 100) / 100));
   const fmtSp = (x) => x.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const fmtSigned = (x, f) => (x > 0 ? '+' : x < 0 ? '−' : '±') + f(Math.abs(x));
+  const fmtSigned = (x, f) => {
+    const body = String(f(Math.abs(x)));
+    const zero = !/[1-9]/.test(body);
+    return (zero ? '±' : x > 0 ? '+' : '−') + body;
+  };
   const fmtMin = (min) => { const m = Math.round(min); return (m >= 60 ? Math.floor(m / 60) + '時間' : '') + (m % 60) + '分'; };
   function skillUnit(skill) {
     if (/^Charge Strength|^Berry Burst|^Berry Zone/.test(skill)) return { label: 'エナジー', u: '', strength: true };
@@ -1256,6 +1260,6 @@
   $('drop').addEventListener('click', () => { if (window.OCR) OCR.warmup().catch(() => {}); });
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {}); });
   }
 })();

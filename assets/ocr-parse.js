@@ -171,7 +171,8 @@
         const m = bestMatch(ph.text, vocab.subskills, (s) => norm(s.ja), (k) => Math.min(2.2, Math.max(1, k.length * 0.22)));
         if (!m) continue;
         const matched = ph.text.slice(m.start, m.end);
-        if (!SUB_SUFFIX.test(matched) && !SUB_SUFFIX.test(ph.text)) continue;
+        // names ending in S / M / L must show that letter (the "ボーナス" ones have none)
+        if (/[SML]$/.test(norm(m.c.ja)) && !SUB_SUFFIX.test(matched) && !SUB_SUFFIX.test(ph.text)) continue;
         hits.push({ sub: m.c, cost: m.cost, margin: m.margin, x: cx(ph.bbox), y: cy(ph.bbox), pass: l.pass });
         subLines.add(l);
       }
@@ -294,7 +295,7 @@
     const lvCands = [];
     for (const l of lines) {
       if (!inTop(l) || skillLines.has(l)) continue;
-      const re = /L[VY][.,:I]?(\d{1,3})/g;
+      const re = /[LTI1|][VY][.,:I]?(\d{1,3})/g;
       let m;
       while ((m = re.exec(l.text))) {
         let v = +m[1];
@@ -315,7 +316,7 @@
     const lockCands = lvCands.filter((c) => c.v === 30 || c.v === 60).map((c) => ({ v: c.v, box: c.box, exact: c.exact, score: c.score }));
     for (const l of lines) {
       if (!inTop(l) || skillLines.has(l)) continue;
-      const re = /L[VY][.,:I]?([36EGB])([0OD])(?![0-9])/g;
+      const re = /[LTI1|][VY][.,:I]?([36EGB])([0OD])(?![0-9])/g;
       let m;
       while ((m = re.exec(l.text))) {
         if (/^\d\d$/.test(m[1] + m[2])) continue; // already a plain number above
@@ -336,12 +337,30 @@
     if (l30 && !l60) out.lockLabels.push({ lv: 60, bbox: { x0: l30.bbox.x0 + step, x1: l30.bbox.x1 + step, y0: l30.bbox.y0, y1: l30.bbox.y1 }, guessed: true });
     if (l60 && !l30 && out.level && out.level < 30) out.lockLabels.push({ lv: 30, bbox: { x0: l60.bbox.x0 - step, x1: l60.bbox.x1 - step, y0: l60.bbox.y0, y1: l60.bbox.y1 }, guessed: true });
 
+    // SP without its label or comma: the plain number just above the "Lv.xx" of the name card
+    if (out.sp == null && levelBox) {
+      let best = null;
+      for (const l of topLines) {
+        const dy = cy(levelBox) - cy(l.bbox);
+        if (dy <= 0.01 * W || dy > 0.1 * W) continue;
+        const re = /\d{3,5}/g;
+        let m;
+        while ((m = re.exec(l.text))) {
+          const before = l.text.slice(Math.max(0, m.index - 3), m.index), after = l.text.slice(m.index + m[0].length, m.index + m[0].length + 1);
+          if (/L[VY][.,:I]?$|[X×.,]$/.test(before) || /[分秒個時]/.test(after)) continue;
+          const v = +m[0];
+          if (v >= 100 && (!best || v > best.v)) best = { v, y: cy(l.bbox) };
+        }
+      }
+      if (best) { out.sp = best.v; out.debug.spY = best.y; out.spGuessed = true; }
+    }
+
     // display name: what follows the level on the name line
     if (spHit) out.displayName = spHit.c.ja;
     else {
-      const nameLine = lines.find((l) => inTop(l) && /L[VY][.,:I]?\d{1,3}/.test(l.text) && /[ぁ-んァ-ヶ一-龠]{2,}/.test(l.text.replace(/^.*L[VY][.,:I]?\d{1,3}/, '')));
+      const nameLine = lines.find((l) => inTop(l) && /[LTI1|][VY][.,:I]?\d{1,3}/.test(l.text) && /[ぁ-んァ-ヶ一-龠]{2,}/.test(l.text.replace(/^.*[LTI1|][VY][.,:I]?\d{1,3}/, '')));
       if (nameLine) {
-        const rest = nameLine.text.replace(/^.*?L[VY][.,:I]?\d{1,3}/, '').match(/[ぁ-んァ-ヶー一-龠]{2,}/);
+        const rest = nameLine.text.replace(/^.*?[LTI1|][VY][.,:I]?\d{1,3}/, '').match(/[ぁ-んァ-ヶー一-龠]{2,}/);
         if (rest) out.displayName = rest[0];
       }
     }

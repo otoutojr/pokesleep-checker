@@ -1,6 +1,6 @@
 /* Offline support. The app shell is network-first (so updates arrive when online);
  * the OCR engine and Japanese model are cache-first (large and versioned by path). */
-const VERSION = '2026-10-20.2';
+const VERSION = '2026-10-20.3';
 const SHELL_CACHE = 'shell-' + VERSION;
 const BIG_CACHE = 'ocr-tesseract-5.1.1';
 const FONT_CACHE = 'fonts-v1';
@@ -11,7 +11,11 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(SHELL_CACHE)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -39,7 +43,7 @@ self.addEventListener('fetch', (event) => {
       return;
     }
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();

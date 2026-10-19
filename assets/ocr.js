@@ -15,6 +15,10 @@
         langPath: BASE + 'vendor/tessdata',
         workerBlobURL: false,
         logger: (m) => { if (progressFn) progressFn(m); },
+      }).then(async (w) => {
+        // sparse-text mode finds the scattered labels and boxes of a game screen far better than one block
+        await w.setParameters({ tessedit_pageseg_mode: '11' });
+        return w;
       }).catch((e) => { workerPromise = null; throw e; });
     }
     return workerPromise;
