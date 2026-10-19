@@ -103,7 +103,21 @@
     }
     return engPromise;
   }
-  const isGolden = (d, i) => d[i] > 225 && d[i + 1] > 150 && d[i + 1] < 215 && d[i + 2] < 110;
+  const isGolden = (d, i) => d[i] > 210 && d[i + 1] > 140 && d[i + 1] < 215 && d[i + 2] < 120 && d[i] - d[i + 2] > 120;
+  // a count badge is white inside with a little dark text
+  function looksLikeBadge(canvas, box) {
+    const w = box.x1 - box.x0, h = box.y1 - box.y0;
+    if (w < 4 || h < 4) return false;
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(box.x0, box.y0, w, h).data;
+    let white = 0, dark = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      if (lum > 235) white++;
+      else if (lum < 150) dark++;
+    }
+    const n = d.length / 4;
+    return white / n > 0.45 && dark / n > 0.02 && dark / n < 0.45;
+  }
   // The count badge is a white pill with a golden border, somewhere below its lock label.
   function findBadgeBelow(canvas, lb) {
     const W = canvas.width, H = canvas.height;
@@ -130,7 +144,8 @@
       const t = bands[i], u = bands[i + 1];
       const h = u.y0 - t.y1;
       if (h > 0.018 * W && h < 0.045 * W && Math.abs(t.a - u.a) < 0.02 * W) {
-        return { x0: x0 + Math.min(t.a, u.a), x1: x0 + Math.max(t.b, u.b), y0: y0 + t.y1 + 1, y1: y0 + u.y0 - 1 };
+        const box = { x0: x0 + Math.min(t.a, u.a), x1: x0 + Math.max(t.b, u.b), y0: y0 + t.y1 + 1, y1: y0 + u.y0 - 1 };
+        if (looksLikeBadge(canvas, box)) return box;
       }
     }
     return null;
@@ -182,7 +197,8 @@
       for (let y = Math.max(y0, ref.y1 - 2); y <= Math.min(y1 - 1, ref.y1 + 6) && !ok; y++) {
         ok = runs(y).some((q) => q.a < r.b + 10 && q.b > r.a - 10);
       }
-      if (ok) out.push({ x0: r.a, x1: r.b, y0: ref.y0, y1: ref.y1 });
+      const box = { x0: r.a, x1: r.b, y0: ref.y0, y1: ref.y1 };
+      if (ok && looksLikeBadge(canvas, box)) out.push(box);
     }
     return out.sort((p, q) => p.x0 - q.x0);
   }
@@ -236,7 +252,7 @@
     }
     for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) {
       const diff = iconDiff(canvas, slots[i].box, slots[j].box);
-      const same = diff < 9 ? true : diff > 22 ? false : undefined;
+      const same = diff < 12 ? true : diff > 24 ? false : undefined;
       if (same === undefined) continue;
       out[i].same[out[j].unlock] = same;
       out[j].same[out[i].unlock] = same;
