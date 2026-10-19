@@ -158,15 +158,88 @@
     ctx.putImageData(id, 0, 0);
     return c;
   }
-  async function readLockedCounts(canvas, labels) {
+  // Every count badge in the same row as a known one (unlocked slots have no lock label).
+  function badgesInRow(canvas, ref) {
+    const W = canvas.width;
+    const y0 = Math.max(0, ref.y0 - 8), y1 = Math.min(canvas.height, ref.y1 + 8);
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, y0, W, y1 - y0).data;
+    const runs = (yy) => {
+      const out = []; let cur = null;
+      for (let x = 0; x < W; x++) {
+        if (isGolden(d, ((yy - y0) * W + x) * 4)) { if (!cur) cur = { a: x, b: x }; else cur.b = x; }
+        else if (cur && x - cur.b > 2) { out.push(cur); cur = null; }
+      }
+      if (cur) out.push(cur);
+      return out.filter((r) => r.b - r.a >= 0.035 * W);
+    };
+    const tops = [];
+    for (let y = Math.max(y0, ref.y0 - 6); y <= Math.min(y1 - 1, ref.y0 + 2); y++) {
+      for (const r of runs(y)) if (!tops.some((t) => Math.abs((t.a + t.b) / 2 - (r.a + r.b) / 2) < 0.03 * W)) tops.push(r);
+    }
     const out = [];
-    const boxes = labels.map((lb) => ({ lv: lb.lv, box: findBadgeBelow(canvas, lb.bbox) })).filter((x) => x.box);
-    if (!boxes.length) return out;
+    for (const r of tops) {
+      let ok = false;
+      for (let y = Math.max(y0, ref.y1 - 2); y <= Math.min(y1 - 1, ref.y1 + 6) && !ok; y++) {
+        ok = runs(y).some((q) => q.a < r.b + 10 && q.b > r.a - 10);
+      }
+      if (ok) out.push({ x0: r.a, x1: r.b, y0: ref.y0, y1: ref.y1 });
+    }
+    return out.sort((p, q) => p.x0 - q.x0);
+  }
+  // Mean pixel difference between the ingredient icons above two badges (same ingredient = same sprite).
+  function iconDiff(canvas, b1, b2) {
+    const W = canvas.width;
+    const w = Math.round(0.11 * W), h = Math.round(0.07 * W);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const grab = (b, pad) => {
+      const x = Math.max(0, b.x1 - Math.round(0.095 * W) - pad), y = Math.max(0, b.y0 - Math.round(0.082 * W) - pad);
+      return { x, y, img: ctx.getImageData(x, y, w + 2 * pad, h + 2 * pad) };
+    };
+    const A = grab(b1, 0), B = grab(b2, 8);
+    let best = Infinity;
+    for (let dx = 0; dx <= 16; dx += 2) for (let dy = 0; dy <= 16; dy += 2) {
+      let sum = 0, n = 0;
+      for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+        const i = (y * A.img.width + x) * 4, j = ((y + dy) * B.img.width + x + dx) * 4;
+        const a = A.img.data, c = B.img.data;
+        sum += Math.abs(a[i] - c[j]) + Math.abs(a[i + 1] - c[j + 1]) + Math.abs(a[i + 2] - c[j + 2]);
+        n += 3;
+      }
+      if (n && sum / n < best) best = sum / n;
+    }
+    return best;
+  }
+  async function readIngredientRow(canvas, labels) {
+    const W = canvas.width;
+    const anchors = labels.map((lb) => ({ lv: lb.lv, box: findBadgeBelow(canvas, lb.bbox) })).filter((x) => x.box);
+    if (!anchors.length) return [];
+    // all badges in the row, each tied to a slot (Lv1 / Lv30 / Lv60 from left to right)
+    const row = badgesInRow(canvas, anchors[0].box);
+    for (const an of anchors) if (!row.some((b) => Math.abs(b.x0 - an.box.x0) < 0.03 * W)) row.push(an.box);
+    row.sort((p, q) => p.x0 - q.x0);
+    const step = 0.163 * W;
+    const ref = anchors[0];
+    const refIdx = [1, 30, 60].indexOf(ref.lv);
+    const slots = [];
+    for (const b of row) {
+      const idx = refIdx - Math.round((ref.box.x0 - b.x0) / step);
+      const off = Math.abs((ref.box.x0 - b.x0) - (refIdx - idx) * step);
+      if (idx < 0 || idx > 2 || off > 0.04 * W || slots.some((x) => x.idx === idx)) continue;
+      slots.push({ idx, box: b });
+    }
     const eng = await getEngWorker();
-    for (const b of boxes) {
-      const { data } = await eng.recognize(badgeCrop(canvas, b.box));
+    const out = [];
+    for (const sl of slots) {
+      const { data } = await eng.recognize(badgeCrop(canvas, sl.box));
       const m = String(data.text || '').replace(/\s/g, '').match(/(\d{1,2})/);
-      if (m && +m[1] >= 1 && +m[1] <= 20) out.push({ unlock: b.lv, count: +m[1] });
+      out.push({ unlock: [1, 30, 60][sl.idx], count: m && +m[1] >= 1 && +m[1] <= 20 ? +m[1] : null, same: {} });
+    }
+    for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) {
+      const diff = iconDiff(canvas, slots[i].box, slots[j].box);
+      const same = diff < 9 ? true : diff > 22 ? false : undefined;
+      if (same === undefined) continue;
+      out[i].same[out[j].unlock] = same;
+      out[j].same[out[i].unlock] = same;
     }
     return out;
   }
@@ -205,7 +278,7 @@
       }
       if (res.lockLabels && res.lockLabels.length) {
         if (onProgress) onProgress({ status: 'counts' });
-        try { res.ingredients = await readLockedCounts(base, res.lockLabels); } catch (e) { res.ingredients = []; }
+        try { res.ingredients = await readIngredientRow(base, res.lockLabels); } catch (e) { res.ingredients = []; }
       }
       return res;
     } finally {

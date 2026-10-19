@@ -874,15 +874,33 @@
     };
   }
 
+  // Ingredients from the badges: "x4" counts narrow each slot, and identical icons across slots
+  // (or different ones) carry a known slot's ingredient over (or rule it out).
   function applyCounts(sp, slots, flags, counts) {
-    for (const c of counts || []) {
-      const i = [1, 30, 60].indexOf(c.unlock);
-      if (i < 0 || !c.count) continue;
-      const hits = PSE.slotOptions(sp, i).filter((o) => o.count === c.count);
-      if (!hits.length) continue;
-      slots[i] = hits[0];
-      if (hits.length === 1) delete flags['ing' + i];
+    const U = [1, 30, 60];
+    const byU = {};
+    for (const c of counts || []) byU[c.unlock] = c;
+    if (!Object.keys(byU).length) return;
+    const cand = [0, 1, 2].map((i) => PSE.slotOptions(sp, i));
+    [0, 1, 2].forEach((i) => {
+      const c = byU[U[i]];
+      if (c && c.count) { const f = cand[i].filter((o) => o.count === c.count); if (f.length) cand[i] = f; }
+    });
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        if (i === j || cand[j].length !== 1) continue;
+        const rel = byU[U[i]] && byU[U[i]].same ? byU[U[i]].same[U[j]] : undefined;
+        if (rel === undefined) continue;
+        const name = cand[j][0].name;
+        const f = cand[i].filter((o) => (rel ? o.name === name : o.name !== name));
+        if (f.length) cand[i] = f;
+      }
     }
+    [0, 1, 2].forEach((i) => {
+      if (!byU[U[i]] || !cand[i].length) return;
+      slots[i] = cand[i][0];
+      if (cand[i].length === 1) delete flags['ing' + i]; else flags['ing' + i] = true;
+    });
   }
 
   function spMatches(x) {
