@@ -35,6 +35,8 @@
   --c-ing: #E39A2D;
   --c-skill: #3B7FE6;
   --c-team: #8A76E8;
+  --gX: #B0369B;
+  --gSS: #D2601A;
   --gS: #C48C0A;
   --gA: #16815A;
   --gB: #2C6FD8;
@@ -54,7 +56,7 @@
     --gold: #F2C24E; --gold-ink: #F6CF6E; --gold-soft: #3A3119; --blue: #76A9FF; --blue-ink: #9EC1FF; --blue-soft: #1B2C58;
     --plain: #A9AFCB; --plain-soft: #222A57; --good: #4FCB8D; --good-soft: #15392E; --warn: #F0B44C; --warn-soft: #3A2E14;
     --bad: #FF7B71; --bad-soft: #3D1D24;
-    --gS: #F2C24E; --gA: #4FCB8D; --gB: #76A9FF; --gC: #A9AFCB; --gD: #FF7B71;
+    --gX: #F08AD8; --gSS: #FF9A5C; --gS: #F2C24E; --gA: #4FCB8D; --gB: #76A9FF; --gC: #A9AFCB; --gD: #FF7B71;
     --c-berry: #FF7A8A; --c-ing: #F5B550; --c-skill: #6FA4FF; --c-team: #AE9CFF;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
     color-scheme: dark;
@@ -67,7 +69,7 @@
   --gold: #F2C24E; --gold-ink: #F6CF6E; --gold-soft: #3A3119; --blue: #76A9FF; --blue-ink: #9EC1FF; --blue-soft: #1B2C58;
   --plain: #A9AFCB; --plain-soft: #222A57; --good: #4FCB8D; --good-soft: #15392E; --warn: #F0B44C; --warn-soft: #3A2E14;
   --bad: #FF7B71; --bad-soft: #3D1D24;
-  --gS: #F2C24E; --gA: #4FCB8D; --gB: #76A9FF; --gC: #A9AFCB; --gD: #FF7B71;
+  --gX: #F08AD8; --gSS: #FF9A5C; --gS: #F2C24E; --gA: #4FCB8D; --gB: #76A9FF; --gC: #A9AFCB; --gD: #FF7B71;
   --c-berry: #FF7A8A; --c-ing: #F5B550; --c-skill: #6FA4FF; --c-team: #AE9CFF;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
   color-scheme: dark;
@@ -204,6 +206,9 @@ main.wrap { padding-top: 18px; padding-bottom: calc(40px + env(safe-area-inset-b
   background: radial-gradient(circle at 50% 50%, var(--surface) 58%, transparent 59%), conic-gradient(var(--g) calc(var(--fill, 0) * 1%), var(--plain-soft) 0);
 }
 .medal span { font-family: var(--f-display); font-weight: 900; font-size: 46px; color: var(--g); line-height: 1; }
+.medal span.two { font-size: 34px; letter-spacing: -.02em; }
+.medal[data-g="X"], .lv-chip[data-g="X"] { --g: var(--gX); }
+.medal[data-g="SS"], .lv-chip[data-g="SS"] { --g: var(--gSS); }
 .medal[data-g="S"], .lv-chip[data-g="S"] { --g: var(--gS); }
 .medal[data-g="A"], .lv-chip[data-g="A"] { --g: var(--gA); }
 .medal[data-g="B"], .lv-chip[data-g="B"] { --g: var(--gB); }
@@ -316,7 +321,8 @@ details.card .inner { padding: 0 18px 18px; display: grid; gap: 14px; }
 .h-open { appearance: none; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; min-width: 0; color: var(--ink); }
 .h-open b { font-weight: 700; }
 .h-open span { display: block; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.h-grade { font-family: var(--f-display); font-weight: 900; font-size: 20px; width: 28px; text-align: center; }
+.h-grade { font-family: var(--f-display); font-weight: 900; font-size: 20px; min-width: 28px; text-align: center; white-space: nowrap; }
+.h-grade.two { font-size: 16px; }
 .h-del { appearance: none; border: 0; background: none; color: var(--faint); cursor: pointer; font-size: 18px; padding: 4px 6px; border-radius: 8px; }
 .empty { font-size: 13.5px; color: var(--muted); }
 .foot { font-size: 12px; color: var(--faint); text-align: center; padding-block: 4px 8px; }
@@ -358,12 +364,14 @@ table.lvt { width: 100%; border-collapse: collapse; font-variant-numeric: tabula
 .lvt thead th { font-size: 11.5px; color: var(--muted); font-weight: 700; border-top: 0; }
 .lvt tr.sel td { background: var(--accent-soft); }
 .lvt td.g { font-family: var(--f-display); font-weight: 900; text-align: center; }
+.lvt td.g small { display: block; font-family: var(--f-body); font-weight: 700; font-size: 10.5px; color: var(--muted); }
 .lvt th:nth-child(2) { text-align: center; }
 
 @media (max-width: 420px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .medal { width: 80px; height: 80px; }
   .medal span { font-size: 40px; }
+  .medal span.two { font-size: 30px; }
   .big { font-size: 26px; }
   .specimen h2 { font-size: 23px; }
 }
@@ -383,3 +391,22 @@ img { max-width: 100%; }
 .legal { font-size: 11.5px; color: var(--faint); text-align: center; line-height: 1.7; }
 .legal a { color: inherit; }
 
+
+/* ideal-ratio additions */
+.role-bars { display: grid; gap: 6px; background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; }
+.rb-head { font-size: 12.5px; font-weight: 700; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.rb-head small { font-weight: 500; font-size: 11.5px; color: var(--faint); }
+.rb { display: grid; grid-template-columns: 64px minmax(0, 1fr) 54px; gap: 10px; align-items: center; }
+.rb .lab { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.rb .bar { height: 8px; border-radius: 999px; background: var(--plain-soft); overflow: hidden; }
+.rb .bar i { display: block; height: 100%; border-radius: inherit; background: var(--faint); }
+.rb:nth-of-type(2) .bar i { background: var(--c-berry); }
+.rb:nth-of-type(3) .bar i { background: var(--c-ing); }
+.rb:nth-of-type(4) .bar i { background: var(--c-skill); }
+.rb .v { font-family: var(--f-display); font-weight: 900; font-size: 15px; text-align: right; font-variant-numeric: tabular-nums; }
+.rb .v small { font-size: 10.5px; font-weight: 700; color: var(--muted); margin-left: 1px; }
+.rb.hl .lab { color: var(--accent-ink); }
+.evo-note { font-size: 13px; line-height: 1.6; background: var(--accent-soft); color: var(--ink); border-radius: var(--r-sm); padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.evo-note span { flex: 1 1 220px; min-width: 0; }
+.evo-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.evo-pick select { font: inherit; font-weight: 700; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
