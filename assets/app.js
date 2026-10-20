@@ -121,32 +121,53 @@
       }
       return teamCache.get(k);
     }
+    // what one skill trigger brings at a level / skill level, measured on a plain individual of the species
     const trig = new Map();
-    function skillStrPerTrigger(sp) {
+    function skillTrigger(sp) {
       return (level, skillLevel) => {
         const k = [sp.en, level, skillLevel, state.fieldBonus, state.sleepScore].join('|');
         if (!trig.has(k)) {
-          let v = 0;
+          let v = null;
           try {
-            const r = new NITO.PokemonStrength(new NITO.PokemonIv({ pokemonName: sp.en, level, skillLevel }), param()).calculateImpl();
-            v = r.skillCount > 0 ? ((r.skillStrength || 0) + (r.skillStrength2 || 0)) / r.skillCount : 0;
-          } catch { v = 0; }
+            const iv = new NITO.PokemonIv({ pokemonName: sp.en, level, skillLevel });
+            const r = new NITO.PokemonStrength(iv, param()).calculateImpl();
+            const c = r.skillCount;
+            if (c > 0) {
+              v = {
+                per: r.skillValuePerTrigger || 0, per2: r.skillValuePerTrigger2 || 0, value: (r.skillValue || 0) / c,
+                str: ((r.skillStrength || 0) + (r.skillStrength2 || 0)) / c, natE: (iv.nature && iv.nature.energyRecoveryFactor) || 1,
+              };
+            }
+          } catch { v = null; }
           trig.set(k, v);
         }
         return trig.get(k);
       };
     }
+    // a teammate's strength per help (used by Helper Boost / Extra Helpful)
+    const tph = new Map();
+    function teamPerHelp() {
+      const k = state.fieldBonus + '|' + state.sleepScore;
+      if (!tph.has(k)) {
+        let t = 0;
+        try {
+          const p = param();
+          t = new NITO.PokemonStrength(p.teamMember, Object.assign({}, p, { period: -1, addHelpingBonusEffect: false })).calculateImpl().totalStrength;
+        } catch { t = 0; }
+        tph.set(k, t);
+      }
+      return tph.get(k);
+    }
     const rating = (v) => new NITO.PokemonRating(v).calculate();
-    // what one skill trigger does at a given skill level (ingredients, energy, strength, ...)
-    const skillEffect = (sp) => (sl) => {
-      try { return NITO.getSkillValue(sp.skill, Math.min(sl, NITO.getMaxSkillLevel(sp.skill))) || 0; } catch { return 0; }
-    };
-    return { iv, calc, teamHBStr, skillStrPerTrigger, rating, skillEffect };
+    return { iv, calc, teamHBStr, teamPerHelp, skillTrigger, rating };
   })();
   const envFor = (sp) => (REF && sp && sp.supported
-    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), skillStrPerTrigger: REF.skillStrPerTrigger(sp), skillEffect: REF.skillEffect(sp) }
+    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), teamPerHelp: REF.teamPerHelp(), skillTrigger: REF.skillTrigger(sp) }
     : { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18 });
-  const withSettings = (ind) => Object.assign({}, ind, { sleepScore: state.sleepScore, env: envFor(ind.sp) });
+  const withSettings = (ind) => {
+    const sp = PSE.formForNature(ind.sp, ind.nature);
+    return Object.assign({}, ind, { sp, sleepScore: state.sleepScore, env: envFor(sp) });
+  };
   let refCache = new Map();
   function refCalc(ind, L, patch, key) {
     if (!REF) return null;
@@ -220,7 +241,8 @@
   function renderSpecimen(ind, chk) {
     const sp = ind.sp;
     const skillJa = PSE.SKILL_JA[sp.skill] || sp.skill;
-    const nick = ind.displayName && norm(ind.displayName) !== norm(sp.ja) ? `<p class="note">画面の名前: ${esc(ind.displayName)}</p>` : '';
+    const sameName = (a, b) => a === b || b.startsWith(a + '(');
+    const nick = ind.displayName && !sameName(norm(ind.displayName), norm(sp.ja)) ? `<p class="note">画面の名前: ${esc(ind.displayName)}</p>` : '';
     const spNow = chk ? chk.calc.rp : null;
     let spBox = '';
     if (spNow != null) {
@@ -259,6 +281,17 @@
         : `Lv${t1.unlock}の${t1.sub.ja}が効いています。`);
     } else if (ev.L >= 10) {
       parts.push(`Lv${ev.L}までに開くサブスキルに、${type}向きのものがほとんどありません。`);
+    }
+    const neg = rows.filter((r) => r.active && !r.sub.util && r.delta.role <= -0.03).sort((a, b) => a.delta.role - b.delta.role)[0];
+    if (neg) {
+      const lead = parts.length && t1 && t1.delta.role >= 0.07 ? 'ただし' : 'さらに';
+      const what = { S: 'スキルの発動', I: '食材', B: 'きのみ' }[ind.sp.spec];
+      const more = neg.delta.str >= 0.02 ? '（エナジー全体では増えます）' : '';
+      const why = negReason(ind.sp.spec, neg.sub);
+      if (why && what) {
+        const cause = ind.sp.spec === 'B' ? '食材を持ってくる回数が増えて' : '持ち物がいっぱいになりやすくなり';
+        parts.push(`${lead}Lv${neg.unlock}の${neg.sub.ja}で${cause}、${what}が減ります${more}。`);
+      } else parts.push(`${lead}Lv${neg.unlock}の${neg.sub.ja}は、${type}としては少しマイナスです${more}。`);
     }
     const nd = ev.natureDelta.role;
     if (nd >= 0.08) parts.push(`せいかくも${type}にぴったりです。`);
@@ -317,13 +350,21 @@
   }
 
   // ---------- render: why ----------
-  function verdictFor(d, sub, dStr) {
+  function verdictFor(d, sub, dStr, spec) {
     if (sub && sub.util) return { v: 'support', t: 'サポート' };
     if (d >= 0.15) return { v: 'great', t: '◎ 大当たり' };
     if (d >= 0.07) return { v: 'good', t: '○ 当たり' };
     if (d >= 0.02) return { v: 'ok', t: '△ ちょい足し' };
+    if (d <= -0.03) return { v: 'bad', t: `▼ ${AXIS[spec] || ''}は減る` };
     if (dStr >= 0.02) return { v: 'none', t: '− 役割外' };
     return { v: 'none', t: '− 効果うすい' };
+  }
+  // why a sub skill lowers what this specialty brings
+  function negReason(spec, s) {
+    if (spec === 'S' && (s.bfs || s.ingf)) return '持ち物がいっぱいになりやすく、いっぱいの間はスキルが出ません';
+    if (spec === 'I' && s.bfs) return '持ち物がいっぱいになりやすく、いっぱいの間は食材を持ってきません';
+    if (spec === 'B' && s.ingf) return '食材を持ってくる回数が増えるぶん、きのみが減ります';
+    return '';
   }
   function natureWhy(ind, ev) {
     const n = ind.nature;
@@ -407,7 +448,7 @@
         <span class="when">せいかく</span>
         <span class="name">${esc(ind.nature.ja)}<span class="tag">${natureLabel(ind.nature)}</span></span>
         <span class="verdict-chip" data-v="${nv.v}">${nv.t}</span>
-        <span class="why">${natureEff}（補正なしのせいかくと比べて）。${esc(natureWhy(ind, ev))} 25種中${ev.natureRank}位。</span>
+        <span class="why">${natureEff}（補正なしのせいかくと比べて）。${esc(natureWhy(ind, ev))} ${ev.natureCount || 25}種中${ev.natureRank}位。</span>
       </div>`;
     const subRows = ev.subDetails.map((d, i) => {
       const u = PSE.UNLOCK[i];
@@ -434,7 +475,8 @@
           + (spec !== 'A' ? `・エナジー ${fmtSigned(dE, fmtInt)}/日` : '')
           + (s.hb ? '（チームへの効果込み）' : '') + '。';
       }
-      const vd = verdictFor(metric, s, d.delta.str);
+      const vd = verdictFor(metric, s, d.delta.str, spec);
+      const neg = metric <= -0.03 && !s.util ? negReason(spec, s) : '';
       const lockNote = !d.active
         ? (u > PSE.MAX_LEVEL ? `Lv${u}で解放（いまの上限はLv${PSE.MAX_LEVEL}）。Lv${lv}で計算: ` : `Lv${u}で解放。Lv${lv}で計算: `)
         : '';
@@ -443,7 +485,7 @@
           <span class="when"><span class="dot ${rarityClass(s)}" title="${RARITY_JA[s.r]}"></span>Lv${u}</span>
           <span class="name ${rarityClass(s)}">${esc(s.ja)}</span>
           <span class="verdict-chip" data-v="${vd.v}">${vd.t}</span>
-          <span class="why">${s.util ? '' : lockNote}${eff}${esc(SUB_TEXT[s.k] || '')}</span>
+          <span class="why">${s.util ? '' : lockNote}${eff}${neg ? esc(neg) + '。' : ''}${esc(SUB_TEXT[s.k] || '')}</span>
         </div>`;
     }).join('');
     const pi = patternInfo(ind);
@@ -521,7 +563,7 @@
       </dl>
       <h3 class="card-title">レベルごとの見込み</h3>
       <div class="lvtable-wrap" id="lvTable"></div>
-      <p class="note">nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・睡眠スコア${state.sleepScore}・好みのきのみなし）。</p>`;
+      <p class="note">nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし）。順位も同じ計算で出しています。</p>`;
     renderLevelTable(ind);
   }
   function renderLevelTable(ind) {

@@ -30,6 +30,18 @@ const PSE = (function () {
     'Lonely', 'Adamant', 'Naughty', 'Brave', 'Calm', 'Gentle', 'Careful', 'Sassy', 'Modest', 'Mild', 'Rash', 'Quiet']
     .forEach((en, i) => { NATURES[i].en = en; });
   const NATURE_BY_JA = Object.fromEntries(NATURES.map((n) => [n.ja, n]));
+  // Toxtricity's form follows its nature (as in the reference calculator)
+  const AMPED_NATURES = ['Hardy', 'Docile', 'Quirky', 'Lax', 'Impish', 'Hasty', 'Naive', 'Jolly', 'Brave', 'Naughty', 'Adamant', 'Sassy', 'Rash'];
+  function naturesFor(sp) {
+    if (sp && sp.en === 'Toxtricity (Amped)') return NATURES.filter((n) => AMPED_NATURES.includes(n.en));
+    if (sp && sp.en === 'Toxtricity (Low Key)') return NATURES.filter((n) => !AMPED_NATURES.includes(n.en));
+    return NATURES;
+  }
+  function formForNature(sp, nature) {
+    if (!sp || !nature || !/^Toxtricity \(/.test(sp.en) || naturesFor(sp).includes(nature)) return sp;
+    const other = sp.en === 'Toxtricity (Amped)' ? 'Toxtricity (Low Key)' : 'Toxtricity (Amped)';
+    return SPECIES.find((x) => x.en === other) || sp;
+  }
   const NEUTRAL = NATURE_BY_JA['まじめ'];
   function natFactor(n, key, up, down) {
     if (!n) return 1;
@@ -213,8 +225,6 @@ const PSE = (function () {
   }
   const ingRate = (sp, nature, tot) => trunc((sp.ir / 100) * natIng(nature) * (1 + tot.ingf * 0.18), 4);
   const skillRate = (sp, nature, tot) => trunc((sp.sr / 100) * natSkill(nature) * (1 + tot.st * 0.18), 4);
-  const fIngRate = (sp, nature, tot) => ftrunc4((sp.ir / 100) * natIng(nature) * (1 + tot.ingf * 0.18));
-  const fSkillRate = (sp, nature, tot) => ftrunc4((sp.sr / 100) * natSkill(nature) * (1 + tot.st * 0.18));
   const berryCount = (sp, tot) => (sp.spec === 'B' || sp.spec === 'A' ? 2 : 1) + (tot.bfs ? 1 : 0);
 
   function ingredientEnergy(slots, level) {
@@ -227,12 +237,6 @@ const PSE = (function () {
     const e3 = e(slots[2]);
     count += e3 > 0 ? 1 : 0;
     return Math.floor((e1 + e2 + e3) / count);
-  }
-  function avgIngCount(slots, level) {
-    const n = level < 30 ? 1 : level < 60 ? 2 : 3;
-    let t = 0, k = 0;
-    for (let i = 0; i < n; i++) if (slots[i] && slots[i].count > 0) { t += slots[i].count; k++; }
-    return k ? t / k : 0;
   }
   function effSkillLevel(sp, baseSkillLevel, tot) {
     return Math.max(1, Math.min(maxSkillLevel(sp.skill), baseSkillLevel + tot.slu));
@@ -262,77 +266,222 @@ const PSE = (function () {
     };
   }
 
-  // ---------- energy model (simplified port of nitoyon's Energy) ----------
-  const effByEnergy = (e) => (e > 80 ? 2.222 : e > 60 ? 1.923 : e > 40 ? 1.724 : e > 1 ? 1.515 : 1);
+  // ---------- daily model ----------
+  // A port of the reference calculator's Energy / HelpCount (nitoyon/pokesleep-tool) with its default
+  // settings: wake 8:00, cook 10:00 / 14:00 / 20:00, Energy for Everyone 3 x 18, items collected every
+  // 3 hours while awake and not at all while asleep, pity proc on. When the inventory is full, a help
+  // only brings berries (sneaky snacking): no ingredients and no main skill. Until collected, a Pokémon
+  // holds at most one skill (two for Skills / All specialty).
+  const TAP_AWAKE_SEC = 180 * 60;
+  const freqRateByEnergy = (e) => (e > 80 ? 0.45 : e > 60 ? 0.52 : e > 40 ? 0.58 : e > 1 ? 0.66 : 1);
   const cookRecovery = (e) => (e > 80 ? 1 : e > 70 ? 2 : e > 60 ? 3 : e > 50 ? 4 : e > 40 ? 5 : e > 30 ? 6 : e > 20 ? 7 : e > 10 ? 8 : 9);
   const energyCache = new Map();
-  function energyProfile(natE, ownERB, teamERB, sleepScore, e4eCount = 3, e4eEnergy = 18) {
-    const key = natE + '|' + ownERB + '|' + teamERB + '|' + sleepScore + '|' + e4eCount + '|' + e4eEnergy;
-    if (energyCache.has(key)) return energyCache.get(key);
+  function energySegments(natE, ownERB, teamERB, sleepScore, e4eCount = 3, e4eEnergy = 18) {
+    const key = natE + '|' + (ownERB ? 1 : 0) + '|' + teamERB + '|' + sleepScore + '|' + e4eCount + '|' + e4eEnergy;
+    const hit = energyCache.get(key);
+    if (hit) return hit;
     const wakeMax = ownERB ? 105 : 100;
     const sleepMinutes = (sleepScore * 510) / 100;
     const sleepRecovery = Math.min(wakeMax, Math.round((sleepMinutes / 510) * 100) * natE * (1 + 0.14 * teamERB));
     const myRestore = e4eEnergy * natE;
     const sleepTime = 1440 - sleepMinutes;
-    const mk = () => {
-      const ev = [{ m: 0, t: 'wake' }, { m: 120, t: 'cook' }, { m: 360, t: 'cook' }, { m: 720, t: 'cook' }];
-      // team energy skills (Energy for Everyone) spread over the day, as in the reference calculator
-      for (let i = 0; i < e4eCount; i++) ev.push({ m: Math.floor(((i + 1) * 930) / (e4eCount + 1) / 10) * 10, t: 'e4e' });
-      ev.push({ m: sleepTime, t: 'sleep' }, { m: 1440, t: 'wake' });
-      return ev.sort((a, b) => a.m - b.m);
-    };
-    const run = (ev, initial) => {
+    const ev = [{ m: 0, t: 'wake' }, { m: 120, t: 'cook' }, { m: 360, t: 'cook' }, { m: 720, t: 'cook' }];
+    for (let i = 0; i < e4eCount; i++) ev.push({ m: Math.floor(((i + 1) * 930) / (e4eCount + 1) / 10) * 10, t: 'e4e' });
+    ev.push({ m: sleepTime, t: 'sleep' }, { m: 1440, t: 'wake' });
+    ev.sort((a, b) => a.m - b.m);
+    const run = (initial) => {
       ev[0].after = initial;
       for (let i = 1; i < ev.length; i++) {
-        const consumed = (ev[i].m - ev[i - 1].m) / 10;
-        ev[i].before = Math.max(0, ev[i - 1].after - consumed);
-        let after = ev[i].before;
-        if (ev[i].t === 'cook') after += cookRecovery(ev[i].before);
-        else if (ev[i].t === 'e4e') after = Math.min(150, after + myRestore);
-        else if (ev[i].t === 'wake') after = Math.min(wakeMax, after + sleepRecovery);
-        else if (ev[i].t === 'sleep') { ev[i].after = ev[i].before; continue; }
-        ev[i].after = Math.ceil(after);
+        const p = ev[i - 1], c = ev[i];
+        c.before = Math.max(0, p.after - (c.m - p.m) / 10);
+        let after = c.before;
+        if (c.t === 'cook') after += cookRecovery(c.before);
+        else if (c.t === 'e4e') after = Math.min(150, after + myRestore);
+        else if (c.t === 'wake') after = Math.min(wakeMax, after + sleepRecovery);
+        else { c.after = c.before; continue; }
+        c.after = Math.ceil(after);
       }
       ev[0].before = ev[ev.length - 1].before;
     };
-    let ev = mk();
-    run(ev, sleepRecovery);
-    const initial = ev[ev.length - 1].after;
-    ev = mk();
-    run(ev, initial);
-    // empty events
+    run(sleepRecovery);
+    run(ev[ev.length - 1].after);
     for (let i = 1; i < ev.length; i++) {
       const p = ev[i - 1], c = ev[i];
-      const consumed = (c.m - p.m) / 10;
-      if (p.after > 0 && p.after < consumed) {
-        ev.splice(i, 0, { m: p.m + p.after * 10, t: 'empty', before: 0, after: 0 });
-      }
+      if (p.after > 0 && p.after < (c.m - p.m) / 10) ev.splice(i, 0, { m: p.m + p.after * 10, t: 'empty', before: 0, after: 0 });
     }
-    // efficiency segments
     const segs = [];
     for (let i = 1; i < ev.length; i++) {
-      let energy = ev[i - 1].after, start = ev[i - 1].m;
-      const curM = ev[i].m;
+      let energy = ev[i - 1].after;
+      let start = ev[i - 1].m;
+      const cur = ev[i].m;
       for (;;) {
         if (energy <= 1) { energy = 0; break; }
         const th = energy <= 40 ? 1 : energy % 20 === 0 ? energy - 20 : Math.floor(energy / 20) * 20;
         const end = start + (energy - th) * 10;
-        if (end > curM) break;
-        segs.push({ s: start, e: end, eff: effByEnergy(energy) });
-        energy = th; start = end;
+        if (end > cur) break;
+        segs.push({ start, end, rate: freqRateByEnergy(energy) });
+        energy = th;
+        start = end;
       }
-      segs.push({ s: start, e: curM, eff: effByEnergy(energy) });
+      segs.push({ start, end: cur, rate: freqRateByEnergy(energy) });
     }
-    let awake = 0, asleep = 0, awakeMin = 0, asleepMin = 0;
-    for (const g of segs) {
-      const a0 = Math.max(g.s, 0), a1 = Math.min(g.e, sleepTime);
-      if (a1 > a0) { awake += (a1 - a0) * g.eff; awakeMin += a1 - a0; }
-      const b0 = Math.max(g.s, sleepTime), b1 = Math.min(g.e, 1440);
-      if (b1 > b0) { asleep += (b1 - b0) * g.eff; asleepMin += b1 - b0; }
+    for (let i = 0; i < segs.length - 1; i++) {
+      if (segs[i].rate === segs[i + 1].rate) { segs[i].end = segs[i + 1].end; segs.splice(i + 1, 1); i--; }
     }
-    const r = { awake, asleep, awakeMin, asleepMin, wakeEnergy: ev[0].after, sleepEnergy: ev.find((x) => x.t === 'sleep').before };
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      if (s.end <= sleepTime) { s.awake = true; continue; }
+      if (s.start >= sleepTime) { s.awake = false; continue; }
+      segs.splice(i + 1, 0, { start: sleepTime, end: s.end, rate: s.rate, awake: false });
+      s.end = sleepTime;
+      s.awake = true;
+    }
+    const r = { key, sleepTime, segs, timing: new Map(), wakeEnergy: ev[0].after, sleepEnergy: ev.find((x) => x.t === 'sleep').before };
     energyCache.set(key, r);
     return r;
+  }
+
+  // helps completed in each collection interval (whole helps, plus a fraction for the last interval)
+  function nextHelpAt(segs, t, baseFreq) {
+    const m = t / 60;
+    let rate = 1;
+    for (let i = 0; i < segs.length; i++) { const s = segs[i]; if (s.start <= m && m < s.end) { rate = s.rate; break; } }
+    return t + baseFreq * rate;
+  }
+  function helpsInInterval(segs, t0, baseFreq, interval) {
+    const endTime = t0 + interval;
+    let cur = t0, count = 0;
+    for (;;) {
+      const next = nextHelpAt(segs, cur, baseFreq);
+      if (next <= endTime) { count++; cur = next; }
+      if (next >= endTime) {
+        const dur = next - cur;
+        return { count, frac: dur === 0 ? 0 : (endTime - cur) / dur, overflow: next - endTime, elapsed: cur };
+      }
+    }
+  }
+  function helpsPerTap(segs, t0, baseFreq, tap, duration) {
+    const endTime = t0 + duration;
+    let segStart = t0, pending = 0, inProgStart = t0, tapEnd = t0 + tap;
+    const out = [];
+    for (;;) {
+      const isLast = tapEnd >= endTime;
+      const segEnd = isLast ? endTime : tapEnd;
+      if (segStart > segEnd) {
+        if (isLast) {
+          const hd = segStart - inProgStart;
+          const frac = hd > 0 ? (segEnd - inProgStart) / hd : 0;
+          if (frac > 0) out.push(frac);
+          break;
+        }
+        tapEnd += tap;
+        continue;
+      }
+      const r = helpsInInterval(segs, segStart, baseFreq, segEnd - segStart);
+      const count = pending + r.count;
+      if (isLast) { const total = count + r.frac; if (total > 0) out.push(total); break; }
+      inProgStart = r.elapsed;
+      if (r.overflow > 0) { pending = 1; segStart = tapEnd + r.overflow; } else { pending = 0; segStart = tapEnd; }
+      if (count > 0) out.push(count);
+      tapEnd += tap;
+    }
+    return out;
+  }
+  // per energy profile, keyed by the base frequency
+  function helpTiming(E, baseFreq, sleepScore) {
+    let t = E.timing.get(baseFreq);
+    if (t) return t;
+    const sleepSec = (sleepScore * 510 * 60) / 100;
+    const awakeSec = 1440 * 60 - sleepSec;
+    t = baseFreq > 0
+      ? { awake: helpsPerTap(E.segs, 0, baseFreq, TAP_AWAKE_SEC, awakeSec), asleep: sleepSec > 0 ? helpsPerTap(E.segs, awakeSec, baseFreq, sleepSec, sleepSec) : [] }
+      : { awake: [], asleep: [] };
+    if (E.timing.size > 2000) E.timing.clear();
+    E.timing.set(baseFreq, t);
+    return t;
+  }
+
+  // inventory: probability distribution of used slots after k helps, starting empty
+  function makeSim(carry, bag) {
+    const state = new Float64Array(Math.max(1, carry));
+    state[0] = 1;
+    return { carry, bag, state, full: [0], fullPre: [0], ingCnt: [0], ingStr: [0] };
+  }
+  function simStep(S) {
+    const C = S.carry, cur = S.state, next = new Float64Array(Math.max(1, C)), bag = S.bag;
+    let newFull = 0, nIngC = 0, nIngS = 0;
+    for (let used = 0; used < C; used++) {
+      const prob = cur[used];
+      if (prob === 0) continue;
+      for (let j = 0; j < bag.length; j++) {
+        const u = bag[j];
+        const tp = prob * u.p;
+        let nu = used;
+        if (u.berry) nu += u.count;
+        else {
+          const add = Math.min(u.count, C - used);
+          nIngC += add * tp;
+          nIngS += add * u.str * tp;
+          nu += add;
+        }
+        if (nu < C) next[nu] += tp; else newFull += tp;
+      }
+    }
+    S.state = next;
+    const i = S.full.length;
+    S.fullPre.push(S.fullPre[i - 1] + S.full[i - 1]);
+    S.full.push(S.full[i - 1] + newFull);
+    S.ingCnt.push(S.ingCnt[i - 1] + nIngC);
+    S.ingStr.push(S.ingStr[i - 1] + nIngS);
+  }
+  // adds w x (expected result after n helps) into acc
+  function simAdd(S, n, p, two, w, acc) {
+    while (S.full.length <= n) simStep(S);
+    const F = S.full;
+    const sneaky = S.fullPre[n];
+    let once = 0, twice = 0;
+    const q = 1 - p;
+    let qPrev = 1;
+    for (let k = 1; k < n; k++) {
+      const qk = qPrev * q;
+      const prob = F[k] - F[k - 1];
+      if (prob !== 0) {
+        if (two) { const o = k * p * qPrev; once += prob * o; twice += prob * (1 - qk - o); }
+        else once += prob * (1 - qk);
+      }
+      qPrev = qk;
+    }
+    if (n > 0) {
+      const probN = 1 - F[n - 1];
+      if (probN > 0) {
+        const qn = qPrev * q;
+        if (two) { const o = n * p * qPrev; once += probN * o; twice += probN * (1 - qn - o); }
+        else once += probN * (1 - qn);
+      }
+    }
+    acc.normal += w * (n - sneaky);
+    acc.sneaky += w * sneaky;
+    acc.ingCnt += w * S.ingCnt[n];
+    acc.ingStr += w * S.ingStr[n];
+    acc.skill += w * (once + 2 * (twice > 0 ? twice : 0));
+  }
+  // a fractional help count interpolates between the neighbouring whole counts
+  function simAddAt(S, n, p, two, acc) {
+    if (Number.isInteger(n)) { simAdd(S, n, p, two, 1, acc); return; }
+    const lo = Math.floor(n), f = n - lo;
+    simAdd(S, lo, p, two, 1 - f, acc);
+    simAdd(S, lo + 1, p, two, f, acc);
+  }
+  function simFor(ctx, carry, ir, br, bc) {
+    const key = (carry * 4 + bc) * 20000 + Math.round(ir * 10000);
+    let S = ctx.sims.get(key);
+    if (!S) {
+      const each = ctx.ingSlots.length ? ir / ctx.ingSlots.length : 0;
+      const bag = [{ berry: true, count: bc, p: br }].concat(ctx.ingSlots.map((s) => ({ berry: false, count: s.count, str: s.str, p: each })));
+      S = makeSim(carry, bag);
+      ctx.sims.set(key, S);
+    }
+    return S;
   }
 
   // ---------- daily value model ----------
@@ -341,61 +490,86 @@ const PSE = (function () {
     const n = sp.spec === 'S' || sp.spec === 'A' ? Math.ceil(142000 / sp.freq) : 78;
     return rate / (1 - (1 - rate) ** (n + 1));
   }
-  function expectedCapped(lambda, cap) {
-    // E[min(X, cap)] for X ~ Poisson(lambda)
-    const e = Math.exp(-lambda);
-    let p = e, cdf = 0, res = 0;
-    for (let k = 0; k < cap; k++) { cdf += p; res += 1 - cdf; p = (p * lambda) / (k + 1); }
-    return res;
+  function baseFrequency(sp, level, nature, tot, ribbon, hbCount) {
+    const f = Math.min(tot.hs * 0.07 + 0.05 * hbCount, 0.35);
+    return sp.freq * trunc(((501 - level) / 500) * natSpeed(nature) * ribbonSpeed(sp, ribbon) * (1 - f), 4);
+  }
+  // what the main skill brings per day: value = the skill's own unit (ingredients, energy, helps...),
+  // str = strength. Per-trigger figures come from the reference calculator (ctx.skillTrig).
+  const DISGUISE_RATE = 0.185;
+  function skillOut(ctx, sl, natE, count, ownPerHelp) {
+    const skill = ctx.sp.skill;
+    const t = ctx.skillTrig ? ctx.skillTrig(sl) : null;
+    if (!t) return { value: count * skillValue(skill, sl), str: 0 };
+    if (/^Metronome|^Skill Copy/.test(skill)) return { value: count, str: count * t.str };
+    if (skill === 'Charge Energy S') return { value: count * t.per * (natE / (t.natE || 1)), str: 0 };
+    const avgPerHelp = (ownPerHelp + 4 * (ctx.teamPerHelp || 0)) / 5;
+    if (skill === 'Helper Boost') { const v = count * t.per; return { value: v, str: v * avgPerHelp * 5 }; }
+    if (skill === 'Extra Helpful S') { const v = count * t.per; return { value: v, str: v * avgPerHelp }; }
+    if (skill === 'Energizing Cheer S (Heal Pulse)') return { value: count * t.per, str: count * t.per2 * avgPerHelp * 2 };
+    if (skill === 'Berry Burst (Disguise)') { const s = t.per * count + t.per * (1 - (1 - DISGUISE_RATE) ** count) * 2; return { value: s, str: s }; }
+    return { value: count * t.value, str: count * t.str };
   }
 
-  function ingredientStrengthPerProc(slots, level) {
-    const n = level < 30 ? 1 : level < 60 ? 2 : 3;
-    let t = 0, k = 0;
-    for (let i = 0; i < n; i++) if (slots[i] && slots[i].count > 0) { t += (ING_STRENGTH[slots[i].name] || 0) * slots[i].count; k++; }
-    return k ? t / k : 0;
+  // small per-context caches for the nature / sub skill dependent rates (numeric keys)
+  const natIdx = (n, key) => (n && n.up === key ? 1 : n && n.down === key ? 2 : 0);
+  function rates(ctx, nature, tot, hbCount) {
+    const sp = ctx.sp;
+    const kf = natIdx(nature, 'speed') * 64 + tot.hs * 2 + hbCount;
+    let baseFreq = ctx.freqCache[kf];
+    if (baseFreq === undefined) baseFreq = ctx.freqCache[kf] = baseFrequency(sp, ctx.level, nature, tot, ctx.ribbon || 0, hbCount);
+    const ki = natIdx(nature, 'ing') * 16 + tot.ingf;
+    let ir = ctx.irCache[ki];
+    if (ir === undefined) ir = ctx.irCache[ki] = trunc((sp.ir / 100) * natIng(nature) * (1 + tot.ingf * 0.18), 4);
+    const ks = natIdx(nature, 'skill') * 16 + tot.st;
+    let p = ctx.srCache[ks];
+    if (p === undefined) p = ctx.srCache[ks] = pityRate(sp, trunc((sp.sr / 100) * natSkill(nature) * (1 + tot.st * 0.18), 4));
+    return { baseFreq, ir, p };
   }
-
-  /** ctx: {sp, level, skillLevelBase, slots, carryBase, ribbon, sleepScore, fieldBonus, e4eCount, e4eEnergy, skillStr} */
+  function energyFor(ctx, natE, ownERB, teamERB) {
+    const k = natE * 100 + (ownERB ? 10 : 0) + teamERB;
+    let E = ctx.eCache.get(k);
+    if (!E) { E = energySegments(natE, ownERB, teamERB, ctx.sleepScore, ctx.e4eCount, ctx.e4eEnergy); ctx.eCache.set(k, E); }
+    return E;
+  }
+  const ACC = { normal: 0, sneaky: 0, ingCnt: 0, ingStr: 0, skill: 0 };
+  /** fills `out` with one day's results; ctx: {sp, level, skillLevelBase, slots, carryBase, ribbon, sleepScore, fieldBonus, e4eCount, e4eEnergy, skillTrig, teamPerHelp} */
+  function core(ctx, nature, tot, hbCount, teamERB, out) {
+    const sp = ctx.sp, level = ctx.level;
+    const { baseFreq, ir, p } = rates(ctx, nature, tot, hbCount);
+    const natE = natEnergy(nature);
+    const br = ir > 0 ? 1 - ir : 0;
+    const bc = berryCount(sp, tot);
+    const carry = ctx.carryBase + 6 * tot.inv;
+    const sl = effSkillLevel(sp, ctx.skillLevelBase, tot);
+    const E = energyFor(ctx, natE, tot.erb > 0, teamERB);
+    const T = helpTiming(E, baseFreq, ctx.sleepScore);
+    const S = simFor(ctx, carry, ir, br, bc);
+    const two = sp.spec === 'S' || sp.spec === 'A';
+    const a = ACC;
+    a.normal = 0; a.sneaky = 0; a.ingCnt = 0; a.ingStr = 0; a.skill = 0;
+    let helpsAwake = 0, helpsAsleep = 0;
+    for (let i = 0; i < T.awake.length; i++) { simAddAt(S, T.awake[i], p, two, a); helpsAwake += T.awake[i]; }
+    const awakeSkills = a.skill, awakeSneaky = a.sneaky;
+    for (let i = 0; i < T.asleep.length; i++) { simAddAt(S, T.asleep[i], p, two, a); helpsAsleep += T.asleep[i]; }
+    const berries = a.normal * br * bc + a.sneaky * bc;
+    const vBerry = berryStrengthField(sp.type, level, ctx.fieldBonus) * berries;
+    const vIng = a.ingStr * ING_FACTOR * (1 + (ctx.fieldBonus || 0) / 100);
+    const helps = helpsAwake + helpsAsleep;
+    const so = skillOut(ctx, sl, natE, a.skill, helps > 0 ? (vBerry + vIng) / helps : 0);
+    out.total = vBerry + vIng + so.str;
+    out.vBerry = vBerry; out.vIng = vIng; out.vSkill = so.value; out.vSkillStr = so.str;
+    out.helps = helps; out.helpsAwake = helpsAwake; out.helpsAsleep = helpsAsleep;
+    out.berries = berries; out.ings = a.ingCnt; out.skills = a.skill; out.nightSkills = a.skill - awakeSkills;
+    out.freq = baseFreq; out.ir = ir; out.sr = p; out.bc = bc; out.carry = carry;
+    out.overflowHelps = a.sneaky; out.nightOverflow = a.sneaky - awakeSneaky; out.skillLevel = sl;
+    return out;
+  }
   const EMPTY_TOT = sumSubs([]);
   function dailyOwn(ctx, nature, tot, hbCount, teamERB) {
-    const { sp, level } = ctx;
-    const freq = frequency(sp, level, nature, tot, ctx.ribbon || 0, hbCount);
-    const prof = energyProfile(natEnergy(nature), tot.erb > 0, teamERB, ctx.sleepScore, ctx.e4eCount, ctx.e4eEnergy);
-    const Ha = (prof.awake * 60) / freq;
-    const Hs = (prof.asleep * 60) / freq;
-    const ir = fIngRate(sp, nature, tot);
-    const br = ir > 0 ? 1 - ir : 0;
-    const sr = pityRate(sp, fSkillRate(sp, nature, tot));
-    const bc = berryCount(sp, tot);
-    const fb = 1 + (ctx.fieldBonus || 0) / 100;
-    const bv = berryStrengthField(sp.type, level, ctx.fieldBonus);
-    const iv = ingredientStrengthPerProc(ctx.slots, level) * ING_FACTOR * fb;
-    const sl = effSkillLevel(sp, ctx.skillLevelBase, tot);
-    // skill effect per trigger: the skill's own table when known (ingredients, energy, strength...),
-    // otherwise the in-game SP skill value, which grows the same way for every skill
-    const eff = ctx.skillEffect ? ctx.skillEffect(sl) : 0;
-    const sv = eff > 0 ? eff : skillValue(sp.skill, sl);
-    const svStr = ctx.skillStr ? ctx.skillStr(sl) : 0;
-    const carry = ctx.carryBase + 6 * tot.inv;
-    const usage = br * bc + ir * avgIngCount(ctx.slots, level);
-    const fullAt = usage > 0 ? carry / usage : Infinity;
-    const Hn = Math.min(Hs, fullAt);
-    const Hss = Math.max(0, Hs - fullAt);
-    const stock = sp.spec === 'S' || sp.spec === 'A' ? 2 : 1;
-    const nightSkills = expectedCapped(Hs * sr, stock);
-    const berries = (Ha + Hn) * br * bc + Hss * bc;
-    const ings = (Ha + Hn) * ir * avgIngCount(ctx.slots, level);
-    const skills = Ha * sr + nightSkills;
-    const vBerry = berries * bv;
-    const vIng = (Ha + Hn) * ir * iv;
-    const vSkill = skills * sv; // skill effect scaled by the in-game SP skill value (works for every skill)
-    const vSkillStr = skills * svStr; // strength the skill produces (0 for energy / shard / cooking-chance skills)
-    return {
-      total: vBerry + vIng + vSkillStr, vBerry, vIng, vSkill, vSkillStr,
-      helps: Ha + Hs, helpsAwake: Ha, helpsAsleep: Hs, berries, ings, skills,
-      freq, ir, sr, bc, carry, overflowHelps: Hss, fullAt, usage, tot,
-    };
+    const own = core(ctx, nature, tot, hbCount, teamERB, {});
+    own.tot = tot;
+    return own;
   }
 
   // role basis: what this specialty is expected to bring
@@ -407,40 +581,46 @@ const PSE = (function () {
   }
   function makeContext(sp, opts) {
     const ctx = Object.assign({ ribbon: 0, sleepScore: 100, fieldBonus: 0, e4eCount: 3, e4eEnergy: 18 }, opts, { sp });
-    // strength per skill trigger, memoized per skill level (provided by the reference calculator when available)
-    const effMemo = new Map();
-    const effFn = opts.skillEffect;
-    ctx.skillEffect = effFn ? (sl) => {
-      if (!effMemo.has(sl)) { let v = 0; try { v = +effFn(sl) || 0; } catch { v = 0; } effMemo.set(sl, v); }
-      return effMemo.get(sl);
+    ctx.sims = new Map();
+    ctx.eCache = new Map();
+    ctx.freqCache = [];
+    ctx.irCache = [];
+    ctx.srCache = [];
+    // ingredient slots open at this level (the first one always counts, as in the reference calculator)
+    const open = ctx.level < 30 ? 1 : ctx.level < 60 ? 2 : 3;
+    ctx.ingSlots = [];
+    for (let i = 0; i < open; i++) {
+      const s = ctx.slots && ctx.slots[i];
+      if (i === 0 || (s && s.count > 0)) ctx.ingSlots.push({ count: s ? s.count : 0, str: s ? ING_STRENGTH[s.name] || 0 : 0 });
+    }
+    // per-trigger skill figures, memoized per skill level (provided by the reference calculator when available)
+    const trigMemo = new Map();
+    const fn = opts.skillTrigger;
+    ctx.skillTrig = fn ? (sl) => {
+      if (!trigMemo.has(sl)) { let v = null; try { v = fn(ctx.level, sl) || null; } catch { v = null; } trigMemo.set(sl, v); }
+      return trigMemo.get(sl);
     } : null;
-    const memo = new Map();
-    const fn = opts.skillStrPerTrigger;
-    ctx.skillStr = (sl) => {
-      if (!fn) return 0;
-      if (!memo.has(sl)) { let v = 0; try { v = fn(ctx.level, sl) || 0; } catch { v = 0; } memo.set(sl, v); }
-      return memo.get(sl);
-    };
+    ctx.teamPerHelp = opts.teamPerHelp || 0;
     // team-effect baselines: 4 teammates assumed to be this species with neutral nature, no sub skills
+    // (Energy Recovery Bonus has no team effect here, as in the reference calculator)
     const b0 = dailyOwn(ctx, NEUTRAL, EMPTY_TOT, 0, 0);
     const bHB = dailyOwn(ctx, NEUTRAL, EMPTY_TOT, 1, 0);
-    const bERB = dailyOwn(ctx, NEUTRAL, EMPTY_TOT, 0, 1);
     ctx.team = {
       hb: {
         role: 4 * Math.max(0, roleOf(sp, bHB) - roleOf(sp, b0)),
         // the reference calculator values Helping Bonus with a fixed teammate (Raichu Lv60)
         str: opts.teamHBStr != null ? opts.teamHBStr : 4 * Math.max(0, bHB.total - b0.total),
       },
-      erb: { role: 4 * Math.max(0, roleOf(sp, bERB) - roleOf(sp, b0)), str: 4 * Math.max(0, bERB.total - b0.total) },
     };
     return ctx;
   }
   function value(ctx, nature, subs) { return valueTot(ctx, nature, sumSubs(subs)); }
   function valueTot(ctx, nature, tot) {
-    const own = dailyOwn(ctx, nature, tot, tot.hb ? 1 : 0, tot.erb ? 1 : 0);
+    // the Pokémon's own Helping Bonus speeds itself up; its own Energy Recovery Bonus only raises its wake-up cap
+    const own = dailyOwn(ctx, nature, tot, tot.hb ? 1 : 0, 0);
     const T = ctx.team;
-    own.teamRole = (tot.hb ? T.hb.role : 0) + (tot.erb ? T.erb.role : 0);
-    own.teamStr = (tot.hb ? T.hb.str : 0) + (tot.erb ? T.erb.str : 0);
+    own.teamRole = tot.hb ? T.hb.role : 0;
+    own.teamStr = tot.hb ? T.hb.str : 0;
     own.role = roleOf(ctx.sp, own) + own.teamRole;
     own.str = own.total + own.teamStr;
     return own;
@@ -494,19 +674,22 @@ const PSE = (function () {
   function distribution(ctx) {
     const level = ctx.level;
     const key = [ctx.sp.idx, level, ctx.skillLevelBase, ctx.slots.map((s) => s && s.name + s.count).join(','), ctx.carryBase, ctx.ribbon,
-      ctx.sleepScore, ctx.fieldBonus, ctx.e4eCount, ctx.e4eEnergy, Math.round(ctx.team.hb.str), ctx.skillEffect ? 'fx' : 'sp'].join('|');
+      ctx.sleepScore, ctx.fieldBonus, ctx.e4eCount, ctx.e4eEnergy, Math.round(ctx.team.hb.str), Math.round(ctx.teamPerHelp), ctx.skillTrig ? 'fx' : 'sp'].join('|');
     if (distCache.has(key)) return distCache.get(key);
     const k = activeCount(level);
     const sigs = signatures(k);
     const role = [], str = [];
-    for (const n of NATURES) {
+    const natures = naturesFor(ctx.sp);
+    const T = ctx.team, o = {};
+    for (const n of natures) {
       for (const g of sigs) {
-        const r = valueTot(ctx, n, g.tot);
-        role.push({ v: r.role, w: g.w, nature: n, subs: g.subs });
-        str.push({ v: r.str, w: g.w, nature: n, subs: g.subs });
+        core(ctx, n, g.tot, g.tot.hb ? 1 : 0, 0, o);
+        const hb = g.tot.hb > 0;
+        role.push({ v: roleOf(ctx.sp, o) + (hb ? T.hb.role : 0), w: g.w, nature: n, subs: g.subs });
+        str.push({ v: o.total + (hb ? T.hb.str : 0), w: g.w, nature: n, subs: g.subs });
       }
     }
-    const r = { role: makeDist(role), str: makeDist(str), n: NATURES.length * choose(SUBSKILLS.length, k), k };
+    const r = { role: makeDist(role), str: makeDist(str), n: natures.length * choose(SUBSKILLS.length, k), k, natureCount: natures.length };
     distCache.set(key, r);
     if (distCache.size > 40) distCache.delete(distCache.keys().next().value);
     return r;
@@ -551,7 +734,7 @@ const PSE = (function () {
     const mk = (lv) => makeContext(sp, {
       level: lv, skillLevelBase, slots: ind.slots, carryBase, ribbon: ind.ribbon || 0, sleepScore: ind.sleepScore || 100,
       fieldBonus: env.fieldBonus || 0, e4eCount: env.e4eCount ?? 3, e4eEnergy: env.e4eEnergy ?? 18,
-      teamHBStr: env.teamHBStr, skillStrPerTrigger: env.skillStrPerTrigger, skillEffect: env.skillEffect,
+      teamHBStr: env.teamHBStr, teamPerHelp: env.teamPerHelp, skillTrigger: env.skillTrigger,
     });
     const ctx = mk(L);
     const subsL = activeSubs(ind.subs, L);
@@ -568,7 +751,7 @@ const PSE = (function () {
 
     const neutral = value(ctx, NEUTRAL, subsL);
     const natureDelta = { role: neutral.role > 0 ? me.role / neutral.role - 1 : 0, str: me.str / neutral.str - 1 };
-    const natureRank = 1 + NATURES.filter((n) => value(ctx, n, subsL).role > me.role * (1 + 1e-9) + 1e-9).length;
+    const natureRank = 1 + naturesFor(sp).filter((n) => value(ctx, n, subsL).role > me.role * (1 + 1e-9) + 1e-9).length;
 
     const ctxCache = { [L]: ctx };
     const subDetails = ind.subs.map((s, i) => {
@@ -584,7 +767,7 @@ const PSE = (function () {
         delta: { role: b.role > 0 ? a.role / b.role - 1 : 0, str: a.str / b.str - 1 },
       };
     });
-    return { L, ctx, me, role, str, n: dist.n, k: dist.k, natureDelta, natureRank, subDetails, skillLevelBase, carryBase, carryDefault };
+    return { L, ctx, me, role, str, n: dist.n, k: dist.k, natureDelta, natureRank, natureCount: dist.natureCount, subDetails, skillLevelBase, carryBase, carryDefault };
   }
 
   // ---------- SP / help time check with suggestions ----------
@@ -645,7 +828,7 @@ const PSE = (function () {
   }
 
   return {
-    loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energyProfile, deriveBase,
+    loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energySegments, deriveBase, naturesFor, formForNature,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },
