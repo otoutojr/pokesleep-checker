@@ -137,10 +137,14 @@
       };
     }
     const rating = (v) => new NITO.PokemonRating(v).calculate();
-    return { iv, calc, teamHBStr, skillStrPerTrigger, rating };
+    // what one skill trigger does at a given skill level (ingredients, energy, strength, ...)
+    const skillEffect = (sp) => (sl) => {
+      try { return NITO.getSkillValue(sp.skill, Math.min(sl, NITO.getMaxSkillLevel(sp.skill))) || 0; } catch { return 0; }
+    };
+    return { iv, calc, teamHBStr, skillStrPerTrigger, rating, skillEffect };
   })();
   const envFor = (sp) => (REF && sp && sp.supported
-    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), skillStrPerTrigger: REF.skillStrPerTrigger(sp) }
+    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), skillStrPerTrigger: REF.skillStrPerTrigger(sp), skillEffect: REF.skillEffect(sp) }
     : { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18 });
   const withSettings = (ind) => Object.assign({}, ind, { sleepScore: state.sleepScore, env: envFor(ind.sp) });
   let refCache = new Map();
@@ -302,7 +306,7 @@
       <div class="verdict">
         <div class="medal" data-g="${r.grade}" style="--fill:${fill}" aria-hidden="true"><span>${r.grade}</span></div>
         <div class="verdict-text">
-          <span class="eyebrow">${SPEC_TYPE[spec]}として・Lv${ev.L}のとき</span>
+          <span class="eyebrow">${esc(ind.sp.ja)}の中で・${SPEC_TYPE[spec]}として・Lv${ev.L}のとき${ev.L !== ind.level ? `（いまLv${ind.level}）` : ''}</span>
           <span class="big">上位 ${fmtTop(r.top)}<small>${GRADE_WORD[r.grade]}</small></span>
           <span class="subline">理想の${Math.round(r.ratio * 100)}%｜同じポケモンの${ev.n.toLocaleString('ja-JP')}通り中</span>
         </div>

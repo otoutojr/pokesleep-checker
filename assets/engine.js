@@ -372,7 +372,10 @@ const PSE = (function () {
     const bv = berryStrengthField(sp.type, level, ctx.fieldBonus);
     const iv = ingredientStrengthPerProc(ctx.slots, level) * ING_FACTOR * fb;
     const sl = effSkillLevel(sp, ctx.skillLevelBase, tot);
-    const sv = skillValue(sp.skill, sl);
+    // skill effect per trigger: the skill's own table when known (ingredients, energy, strength...),
+    // otherwise the in-game SP skill value, which grows the same way for every skill
+    const eff = ctx.skillEffect ? ctx.skillEffect(sl) : 0;
+    const sv = eff > 0 ? eff : skillValue(sp.skill, sl);
     const svStr = ctx.skillStr ? ctx.skillStr(sl) : 0;
     const carry = ctx.carryBase + 6 * tot.inv;
     const usage = br * bc + ir * avgIngCount(ctx.slots, level);
@@ -405,6 +408,12 @@ const PSE = (function () {
   function makeContext(sp, opts) {
     const ctx = Object.assign({ ribbon: 0, sleepScore: 100, fieldBonus: 0, e4eCount: 3, e4eEnergy: 18 }, opts, { sp });
     // strength per skill trigger, memoized per skill level (provided by the reference calculator when available)
+    const effMemo = new Map();
+    const effFn = opts.skillEffect;
+    ctx.skillEffect = effFn ? (sl) => {
+      if (!effMemo.has(sl)) { let v = 0; try { v = +effFn(sl) || 0; } catch { v = 0; } effMemo.set(sl, v); }
+      return effMemo.get(sl);
+    } : null;
     const memo = new Map();
     const fn = opts.skillStrPerTrigger;
     ctx.skillStr = (sl) => {
@@ -485,7 +494,7 @@ const PSE = (function () {
   function distribution(ctx) {
     const level = ctx.level;
     const key = [ctx.sp.idx, level, ctx.skillLevelBase, ctx.slots.map((s) => s && s.name + s.count).join(','), ctx.carryBase, ctx.ribbon,
-      ctx.sleepScore, ctx.fieldBonus, ctx.e4eCount, ctx.e4eEnergy, Math.round(ctx.team.hb.str)].join('|');
+      ctx.sleepScore, ctx.fieldBonus, ctx.e4eCount, ctx.e4eEnergy, Math.round(ctx.team.hb.str), ctx.skillEffect ? 'fx' : 'sp'].join('|');
     if (distCache.has(key)) return distCache.get(key);
     const k = activeCount(level);
     const sigs = signatures(k);
@@ -542,7 +551,7 @@ const PSE = (function () {
     const mk = (lv) => makeContext(sp, {
       level: lv, skillLevelBase, slots: ind.slots, carryBase, ribbon: ind.ribbon || 0, sleepScore: ind.sleepScore || 100,
       fieldBonus: env.fieldBonus || 0, e4eCount: env.e4eCount ?? 3, e4eEnergy: env.e4eEnergy ?? 18,
-      teamHBStr: env.teamHBStr, skillStrPerTrigger: env.skillStrPerTrigger,
+      teamHBStr: env.teamHBStr, skillStrPerTrigger: env.skillStrPerTrigger, skillEffect: env.skillEffect,
     });
     const ctx = mk(L);
     const subsL = activeSubs(ind.subs, L);
