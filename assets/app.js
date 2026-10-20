@@ -42,6 +42,7 @@
   const HKEY = 'pse:v1:history';
   const SKEY = 'pse:v1:sleep';
   const FKEY = 'pse:v1:field';
+  const MKEY = 'pse:v1:maxskill';
 
   // ---------- individual helpers ----------
   function defaultSlots(sp) {
@@ -65,6 +66,7 @@
     evalLevel: 60,
     sleepScore: store.get(SKEY, 100),
     fieldBonus: store.get(FKEY, 0),
+    maxSkill: store.get(MKEY, true),
     files: [],
     autoFix: null,
   };
@@ -74,8 +76,8 @@
     if (typeof NITO === 'undefined') return null;
     const params = new Map();
     const param = () => {
-      const k = state.fieldBonus + '|' + state.sleepScore;
-      if (!params.has(k)) params.set(k, NITO.createStrengthParameter({ fieldBonus: state.fieldBonus, sleepScore: state.sleepScore }));
+      const k = state.fieldBonus + '|' + state.sleepScore + '|' + state.maxSkill;
+      if (!params.has(k)) params.set(k, NITO.createStrengthParameter({ fieldBonus: state.fieldBonus, sleepScore: state.sleepScore, maxSkillLevel: !!state.maxSkill }));
       return params.get(k);
     };
     function iv(ind, level, patch) {
@@ -110,7 +112,7 @@
     }
     const teamCache = new Map();
     function teamHBStr() {
-      const k = state.fieldBonus + '|' + state.sleepScore;
+      const k = state.fieldBonus + '|' + state.sleepScore + '|' + state.maxSkill;
       if (!teamCache.has(k)) {
         let t = 0;
         try {
@@ -125,7 +127,7 @@
     const trig = new Map();
     function skillTrigger(sp) {
       return (level, skillLevel) => {
-        const k = [sp.en, level, skillLevel, state.fieldBonus, state.sleepScore].join('|');
+        const k = [sp.en, level, skillLevel, state.fieldBonus, state.sleepScore, state.maxSkill].join('|');
         if (!trig.has(k)) {
           let v = null;
           try {
@@ -147,7 +149,7 @@
     // a teammate's strength per help (used by Helper Boost / Extra Helpful)
     const tph = new Map();
     function teamPerHelp() {
-      const k = state.fieldBonus + '|' + state.sleepScore;
+      const k = state.fieldBonus + '|' + state.sleepScore + '|' + state.maxSkill;
       if (!tph.has(k)) {
         let t = 0;
         try {
@@ -162,7 +164,7 @@
     return { iv, calc, teamHBStr, teamPerHelp, skillTrigger, rating };
   })();
   const envFor = (sp) => (REF && sp && sp.supported
-    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), teamPerHelp: REF.teamPerHelp(), skillTrigger: REF.skillTrigger(sp) }
+    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), teamPerHelp: REF.teamPerHelp(), skillTrigger: REF.skillTrigger(sp), maxSkill: !!state.maxSkill }
     : { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18 });
   const withSettings = (ind) => {
     const sp = PSE.formForNature(ind.sp, ind.nature);
@@ -298,6 +300,8 @@
     else if (nd >= 0.02) parts.push(`せいかくも${type}に向いています。`);
     else if (nd <= -0.02) parts.push(`せいかくは${type}には少しマイナスです。`);
     else parts.push('せいかくの影響は小さめです。');
+    const seeded = state.maxSkill ? rows.filter((r) => r.active && r.sub.slu > 0) : [];
+    if (seeded.length) parts.push(`${seeded.map((r) => r.sub.ja).join('と')}は、たねでスキルレベルを最大にする前提なので評価に入れていません。`);
     const later = rows.filter((r) => !r.active && r.unlock <= PSE.MAX_LEVEL && !r.sub.util && r.delta.role >= 0.07);
     if (later.length) parts.push(`Lv${later[0].unlock}で${later[0].sub.ja}が開くと、さらに伸びます。`);
     return parts.join('');
@@ -475,8 +479,10 @@
           + (spec !== 'A' ? `・エナジー ${fmtSigned(dE, fmtInt)}/日` : '')
           + (s.hb ? '（チームへの効果込み）' : '') + '。';
       }
-      const vd = verdictFor(metric, s, d.delta.str, spec);
-      const neg = metric <= -0.03 && !s.util ? negReason(spec, s) : '';
+      const seeded = state.maxSkill && s.slu > 0;
+      if (seeded) eff = 'メインスキルのたねでスキルレベルを最大にする前提なので、評価に入れていません。';
+      const vd = seeded ? { v: 'none', t: '− たねで代わりがきく' } : verdictFor(metric, s, d.delta.str, spec);
+      const neg = metric <= -0.03 && !s.util && !seeded ? negReason(spec, s) : '';
       const lockNote = !d.active
         ? (u > PSE.MAX_LEVEL ? `Lv${u}で解放（いまの上限はLv${PSE.MAX_LEVEL}）。Lv${lv}で計算: ` : `Lv${u}で解放。Lv${lv}で計算: `)
         : '';
@@ -485,7 +491,7 @@
           <span class="when"><span class="dot ${rarityClass(s)}" title="${RARITY_JA[s.r]}"></span>Lv${u}</span>
           <span class="name ${rarityClass(s)}">${esc(s.ja)}</span>
           <span class="verdict-chip" data-v="${vd.v}">${vd.t}</span>
-          <span class="why">${s.util ? '' : lockNote}${eff}${neg ? esc(neg) + '。' : ''}${esc(SUB_TEXT[s.k] || '')}</span>
+          <span class="why">${s.util ? '' : seeded ? (d.active ? '' : `Lv${u}で解放。`) : lockNote}${eff}${neg ? esc(neg) + '。' : ''}${esc(SUB_TEXT[s.k] || '')}</span>
         </div>`;
     }).join('');
     const pi = patternInfo(ind);
@@ -550,7 +556,7 @@
       <div class="yield">
         <div class="y-row${hl('b')}"><span class="lab"><i class="sw b"></i>きのみ</span><span class="main">${fmt1(r.berryCount)}個</span><span class="en">${fmtInt(r.berryTotalStrength)}</span><span class="meta">確率${fmt1(r.berryRate * 100)}%・1個${fmtInt(r.berry1Strength)}エナジー</span></div>
         <div class="y-row${hl('i')}"><span class="lab"><i class="sw i"></i>食材</span><span class="main">${ings}</span><span class="en">${fmtInt(r.ingStrength)}</span><span class="meta">確率${fmt1(r.ingRate * 100)}%・合計${fmt1(ingTotal)}個</span></div>
-        <div class="y-row${hl('s')}"><span class="lab"><i class="sw s"></i>スキル</span><span class="main">${fmt2(r.skillCount)}回</span><span class="en">${skStr > 0 ? fmtInt(skStr) : '—'}</span><span class="meta">${esc(PSE.SKILL_JA[ind.sp.skill] || '')} Lv.${c.iv.skillLevel}・${skillMeta}</span></div>
+        <div class="y-row${hl('s')}"><span class="lab"><i class="sw s"></i>スキル</span><span class="main">${fmt2(r.skillCount)}回</span><span class="en">${skStr > 0 ? fmtInt(skStr) : '—'}</span><span class="meta">${esc(PSE.SKILL_JA[ind.sp.skill] || '')} Lv.${state.maxSkill ? PSE.maxSkillLevel(ind.sp.skill) + '（たねで最大）' : c.iv.skillLevel}・${skillMeta}</span></div>
         ${team > 0 ? `<div class="y-row"><span class="lab"><i class="sw t"></i>チーム</span><span class="main">おてつだいボーナス分</span><span class="en">${fmtInt(team)}</span><span class="meta">ほかの4匹のおてつだいが速くなるぶん</span></div>` : ''}
       </div>
       <dl class="kv">
@@ -563,7 +569,7 @@
       </dl>
       <h3 class="card-title">レベルごとの見込み</h3>
       <div class="lvtable-wrap" id="lvTable"></div>
-      <p class="note">nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし）。順位も同じ計算で出しています。</p>`;
+      <p class="note">nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}）。順位も同じ計算で出しています。</p>`;
     renderLevelTable(ind);
   }
   function renderLevelTable(ind) {
@@ -679,6 +685,7 @@
         <select id="inSub${i}"><option value="">（なし・不明）</option>${groups}</select>
       </div>`).join('');
     $('sleepSeg').innerHTML = [100, 90, 80, 70].map((v) => `<button type="button" data-sleep="${v}" aria-pressed="${v === state.sleepScore}">${v}</button>`).join('');
+    $('skillSeg').innerHTML = [[1, 'たねで最大にする前提'], [0, 'いまのスキルLvで計算']].map(([v, t]) => `<button type="button" data-maxskill="${v}" aria-pressed="${(v === 1) === !!state.maxSkill}">${t}</button>`).join('');
   }
   function buildEditorForSpecies(sp) {
     const max = PSE.maxSkillLevel(sp.skill);
@@ -784,7 +791,7 @@
       t: Date.now(), sp: ind.sp.en, lv: ind.level, n: ind.nature.ja, s: ind.subs.map((x) => (x ? x.k : null)),
       sk: ind.skillLevelShown, i: ind.slots.map((x) => (x ? [x.name, x.count] : null)),
       spv: ind.spShown || null, ht: ind.helpTimeShown || null, c: ind.carryShown || null, r: ind.ribbon || 0,
-      d: ind.displayName || '', g: ev ? ev.role.grade : '', p: ev ? ev.role.top : null,
+      d: ind.displayName || '', g: ev ? ev.role.grade : '', p: ev ? ev.role.top : null, gs: gradeSig(),
     };
   }
   function deserialize(o) {
@@ -800,6 +807,31 @@
       }),
       spShown: o.spv, helpTimeShown: o.ht, carryShown: o.c, ribbon: o.r || 0, displayName: o.d || '',
     };
+  }
+  // grades in the history are re-evaluated when the model or the settings change
+  const gradeSig = () => ['m3', state.sleepScore, state.fieldBonus, state.maxSkill ? 1 : 0].join('|');
+  let regrading = 0;
+  async function regradeHistory() {
+    const my = ++regrading;
+    const sig = gradeSig();
+    const list = store.get(HKEY, []);
+    const done = [];
+    for (const o of list) {
+      if (o.gs === sig) continue;
+      await sleep(0);
+      if (my !== regrading) return;
+      const ind = deserialize(o);
+      let g = o.g, top = o.p;
+      if (ind && ind.sp.supported) {
+        try { const ev = PSE.evaluate(withSettings(ind), 60); g = ev.role.grade; top = ev.role.top; } catch { /* keep the old grade */ }
+      }
+      done.push({ t: o.t, g, p: top });
+    }
+    if (!done.length || my !== regrading) return;
+    const cur = store.get(HKEY, []);
+    for (const d of done) { const c = cur.find((x) => x.t === d.t); if (c) { c.g = d.g; c.p = d.p; c.gs = sig; } }
+    store.set(HKEY, cur);
+    renderHistory();
   }
   function saveHistory(ind, replaceT) {
     let ev = null;
@@ -1233,6 +1265,15 @@
       store.set(SKEY, state.sleepScore);
       document.querySelectorAll('#sleepSeg button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.sleep === state.sleepScore)));
       renderAll();
+      regradeHistory();
+      return;
+    }
+    if (t.dataset.maxskill != null) {
+      state.maxSkill = t.dataset.maxskill === '1';
+      store.set(MKEY, state.maxSkill);
+      document.querySelectorAll('#skillSeg button').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.maxskill === '1') === state.maxSkill)));
+      renderAll();
+      regradeHistory();
       return;
     }
     if (t.dataset.h != null) {
@@ -1258,6 +1299,7 @@
       state.fieldBonus = parseInt(e.target.value, 10) || 0;
       store.set(FKEY, state.fieldBonus);
       renderAll();
+      regradeHistory();
     }
   });
   $('form').addEventListener('submit', (e) => e.preventDefault());
@@ -1300,6 +1342,7 @@
   fillEditor();
   renderHistory();
   renderAll();
+  setTimeout(regradeHistory, 1500);
 
   // home-screen install hint (iPhone Safari, not yet installed)
   const IKEY = 'pse:v1:installHintClosed';

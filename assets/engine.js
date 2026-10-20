@@ -533,7 +533,8 @@ const PSE = (function () {
     return E;
   }
   const ACC = { normal: 0, sneaky: 0, ingCnt: 0, ingStr: 0, skill: 0 };
-  /** fills `out` with one day's results; ctx: {sp, level, skillLevelBase, slots, carryBase, ribbon, sleepScore, fieldBonus, e4eCount, e4eEnergy, skillTrig, teamPerHelp} */
+  /** fills `out` with one day's results; ctx: {sp, level, skillLevelBase, slots, carryBase, ribbon, sleepScore, fieldBonus, e4eCount, e4eEnergy, skillTrig, teamPerHelp, maxSkill}
+   *  maxSkill: the main skill is assumed to be at its max level (raised with Main Skill Seeds), so Skill Level Up has no effect */
   function core(ctx, nature, tot, hbCount, teamERB, out) {
     const sp = ctx.sp, level = ctx.level;
     const { baseFreq, ir, p } = rates(ctx, nature, tot, hbCount);
@@ -541,7 +542,7 @@ const PSE = (function () {
     const br = ir > 0 ? 1 - ir : 0;
     const bc = berryCount(sp, tot);
     const carry = ctx.carryBase + 6 * tot.inv;
-    const sl = effSkillLevel(sp, ctx.skillLevelBase, tot);
+    const sl = ctx.maxSkill ? maxSkillLevel(sp.skill) : effSkillLevel(sp, ctx.skillLevelBase, tot);
     const E = energyFor(ctx, natE, tot.erb > 0, teamERB);
     const T = helpTiming(E, baseFreq, ctx.sleepScore);
     const S = simFor(ctx, carry, ir, br, bc);
@@ -674,7 +675,7 @@ const PSE = (function () {
   function distribution(ctx) {
     const level = ctx.level;
     const key = [ctx.sp.idx, level, ctx.skillLevelBase, ctx.slots.map((s) => s && s.name + s.count).join(','), ctx.carryBase, ctx.ribbon,
-      ctx.sleepScore, ctx.fieldBonus, ctx.e4eCount, ctx.e4eEnergy, Math.round(ctx.team.hb.str), Math.round(ctx.teamPerHelp), ctx.skillTrig ? 'fx' : 'sp'].join('|');
+      ctx.sleepScore, ctx.fieldBonus, ctx.e4eCount, ctx.e4eEnergy, Math.round(ctx.team.hb.str), Math.round(ctx.teamPerHelp), ctx.skillTrig ? 'fx' : 'sp', ctx.maxSkill ? 'max' : 'cur'].join('|');
     if (distCache.has(key)) return distCache.get(key);
     const k = activeCount(level);
     const sigs = signatures(k);
@@ -734,7 +735,7 @@ const PSE = (function () {
     const mk = (lv) => makeContext(sp, {
       level: lv, skillLevelBase, slots: ind.slots, carryBase, ribbon: ind.ribbon || 0, sleepScore: ind.sleepScore || 100,
       fieldBonus: env.fieldBonus || 0, e4eCount: env.e4eCount ?? 3, e4eEnergy: env.e4eEnergy ?? 18,
-      teamHBStr: env.teamHBStr, teamPerHelp: env.teamPerHelp, skillTrigger: env.skillTrigger,
+      teamHBStr: env.teamHBStr, teamPerHelp: env.teamPerHelp, skillTrigger: env.skillTrigger, maxSkill: !!env.maxSkill,
     });
     const ctx = mk(L);
     const subsL = activeSubs(ind.subs, L);

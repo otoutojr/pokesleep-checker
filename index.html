@@ -18,7 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=20261020-7">
+<link rel="stylesheet" href="assets/app.css?v=20261020-8">
 </head>
 <body>
 <header class="band">
@@ -128,6 +128,7 @@
         <li>メインの評価は「とくい」の基準です。きのみタイプはきのみ、食材タイプは食材、スキルタイプはスキル効果（1回の効果量はスキルレベルごとの実際の値。たとえば食材セレクトSならLv1で5個、Lv3で8個）、オールタイプは総合エナジーの量で比べます。総合エナジーでの順位も並べて出します。</li>
         <li>「数値」のカードは、nitoyon さんの計算機の計算部分をそのまま組み込んで出しています（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・好みのきのみなし・起きている間は3時間ごとに所持品を回収し、寝ている間は回収しない前提）。フィールドボーナスと睡眠スコアは変えられます。</li>
         <li>順位も同じ計算で、全組み合わせを比べています。所持品がいっぱいになると、きのみだけを持ってきて食材とスキルは出なくなるので、きのみの数Sや食材確率アップはスキルタイプには逆効果になることがあり、最大所持数アップは効いてきます。おてつだいボーナスは「ほかの4匹のおてつだいが5%速くなる」ぶんも足しています。</li>
+        <li>スキルレベルアップは、メインスキルのたねでスキルレベルを最大にすると効果がなくなるので、初期設定では「たねで最大にする前提」で計算し、評価に入れていません（数値もメインスキルを最大レベルにして出します）。下の設定で「いまのスキルLvで計算」に切り替えられます。</li>
         <li>ゆめのかけらボーナス・リサーチEXPボーナス・睡眠EXPボーナス・EXP獲得量のせいかくはエナジーに影響しないので、順位には入れず「サポート」として表示します。</li>
         <li>SP・おてつだい時間・最大所持数の計算式とポケモンのデータは <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT License）、SPの式は <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX</a> の調査にもとづきます。画面のSPと計算が一致すれば、読み取りは正しいと判断できます。</li>
         <li>スクショの文字はiPhoneの中で読み取ります（Tesseract.js）。画像はどこにも送られず、保存もされません。読み取った個体の履歴は、このiPhoneのアプリの中にだけ保存されます。</li>
@@ -138,17 +139,22 @@
         <div class="seg" id="sleepSeg" role="group" aria-label="睡眠スコア"></div>
         <span class="hint">低いほど、げんき回復量のせいかくやげんき回復ボーナスの差が出やすくなります。</span>
       </div>
+      <div class="field">
+        <span class="lab">スキルレベルアップの扱い</span>
+        <div class="seg" id="skillSeg" role="group" aria-label="スキルレベルアップの扱い"></div>
+        <span class="hint">メインスキルのたねでスキルレベルを最大にするなら、スキルレベルアップは効果がなくなるので評価に入れません。</span>
+      </div>
     </div>
   </details>
   <p class="foot">データ更新: 2026年10月（ゲーム内レベル上限 Lv70、サブスキル解放 Lv10/25/50/70/80）</p>
   <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）</p>
 </main>
-<script src="assets/data.js?v=20261020-7"></script>
-<script src="assets/nito.js?v=20261020-7"></script>
-<script src="assets/engine.js?v=20261020-7"></script>
-<script src="vendor/tesseract/tesseract.min.js?v=20261020-7"></script>
-<script src="assets/ocr-parse.js?v=20261020-7"></script>
-<script src="assets/ocr.js?v=20261020-7"></script>
-<script src="assets/app.js?v=20261020-7"></script>
+<script src="assets/data.js?v=20261020-8"></script>
+<script src="assets/nito.js?v=20261020-8"></script>
+<script src="assets/engine.js?v=20261020-8"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=20261020-8"></script>
+<script src="assets/ocr-parse.js?v=20261020-8"></script>
+<script src="assets/ocr.js?v=20261020-8"></script>
+<script src="assets/app.js?v=20261020-8"></script>
 </body>
 </html>
