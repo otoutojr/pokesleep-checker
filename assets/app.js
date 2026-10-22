@@ -71,7 +71,7 @@
     sleepScore: store.get(SKEY, 100),
     fieldBonus: store.get(FKEY, 0),
     // Skill Level Up is valued with the seeds it saves by default (as in だいふく's checker)
-    maxSkill: store.get(MKEY, false),
+    maxSkill: store.get(MKEY, true),
     // a pre-evolution is evaluated as its final evolution (as in だいふく's checker)
     evolve: store.get(EKEY, true),
     evoPick: store.get(PKEY, {}),
@@ -751,7 +751,7 @@
         <select id="inSub${i}"><option value="">（なし・不明）</option>${groups}</select>
       </div>`).join('');
     $('sleepSeg').innerHTML = [100, 90, 80, 70].map((v) => `<button type="button" data-sleep="${v}" aria-pressed="${v === state.sleepScore}">${v}</button>`).join('');
-    $('skillSeg').innerHTML = [[0, 'たねの節約ぶんも評価'], [1, 'たねで最大にする前提']].map(([v, t]) => `<button type="button" data-maxskill="${v}" aria-pressed="${(v === 1) === !!state.maxSkill}">${t}</button>`).join('');
+    $('skillSeg').innerHTML = [[1, 'たねで最大にする前提'], [0, 'たねの節約ぶんも評価']].map(([v, t]) => `<button type="button" data-maxskill="${v}" aria-pressed="${(v === 1) === !!state.maxSkill}">${t}</button>`).join('');
     $('evoSeg').innerHTML = [[1, '最終進化の姿で評価'], [0, 'そのままの姿で評価']].map(([v, t]) => `<button type="button" data-evolve="${v}" aria-pressed="${(v === 1) === !!state.evolve}">${t}</button>`).join('');
   }
   function buildEditorForSpecies(sp) {
