@@ -168,27 +168,11 @@
       }
       return tph.get(k);
     }
-    // the reference teammate's day (raw figures at field bonus 0), for the ideal-ratio model
-    const tpc = new Map();
-    function teamParts() {
-      const k = state.fieldBonus + '|' + state.sleepScore + '|' + state.maxSkill;
-      if (!tpc.has(k)) {
-        let t = null;
-        try {
-          const p = param();
-          const r = new NITO.PokemonStrength(p.teamMember, Object.assign({}, p, { addHelpingBonusEffect: false })).calculate();
-          const fb = 1 + state.fieldBonus / 100;
-          t = { berry: r.berryTotalStrength / fb, ing: r.ingStrength / fb, skill: ((r.skillStrength || 0) + (r.skillStrength2 || 0)) / fb, helps: (r.total && r.total.all) || 0 };
-        } catch { t = null; }
-        tpc.set(k, t);
-      }
-      return tpc.get(k);
-    }
     const rating = (v) => new NITO.PokemonRating(v).calculate();
-    return { iv, calc, teamHBStr, teamPerHelp, teamParts, skillTrigger, rating };
+    return { iv, calc, teamHBStr, teamPerHelp, skillTrigger, rating };
   })();
   const envFor = (sp) => (REF && sp && sp.supported
-    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), teamPerHelp: REF.teamPerHelp(), teamParts: REF.teamParts(), skillTrigger: REF.skillTrigger(sp), maxSkill: !!state.maxSkill }
+    ? { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, teamHBStr: REF.teamHBStr(), teamPerHelp: REF.teamPerHelp(), skillTrigger: REF.skillTrigger(sp), maxSkill: !!state.maxSkill }
     : { fieldBonus: state.fieldBonus, e4eCount: 3, e4eEnergy: 18, maxSkill: !!state.maxSkill });
 
   // ---------- evolution: a pre-evolution is evaluated as its final evolution ----------
@@ -333,22 +317,22 @@
     const active = rows.filter((r) => r.active && !r.sub.util && !seeded(r)).sort((x, y) => y.pt - x.pt);
     const parts = [];
     const [t1, t2] = active;
-    if (t1 && t1.pt >= 20) {
-      parts.push(`Lv${t1.unlock}の${t1.sub.ja}が大きな武器です（理想個体の${Math.round(t1.pt)}%ぶん）。`);
-      if (t2 && t2.pt >= 10) parts.push(`Lv${t2.unlock}の${t2.sub.ja}も効いています。`);
-    } else if (t1 && t1.pt >= 10) {
-      parts.push(t2 && t2.pt >= 10
+    if (t1 && t1.pt >= 8) {
+      parts.push(`Lv${t1.unlock}の${t1.sub.ja}が大きな武器です（理想個体比 ${fmtPt(t1.pt)}）。`);
+      if (t2 && t2.pt >= 4) parts.push(`Lv${t2.unlock}の${t2.sub.ja}も効いています。`);
+    } else if (t1 && t1.pt >= 4) {
+      parts.push(t2 && t2.pt >= 4
         ? `Lv${t1.unlock}の${t1.sub.ja}とLv${t2.unlock}の${t2.sub.ja}が効いています。`
         : `Lv${t1.unlock}の${t1.sub.ja}が効いています。`);
     } else if (ev.L >= 10) {
       parts.push(`Lv${ev.L}までに開くサブスキルに、1日のエナジーを大きく増やすものがありません。`);
     }
-    const neg = rows.filter((r) => r.active && !r.sub.util && r.pt <= -3).sort((x, y) => x.pt - y.pt)[0];
+    const neg = rows.filter((r) => r.active && !r.sub.util && r.pt <= -1.5).sort((x, y) => x.pt - y.pt)[0];
     if (neg) parts.push(`${parts.length ? 'ただし' : ''}Lv${neg.unlock}の${neg.sub.ja}は、${negReason(ind.sp.spec, neg.sub) || 'このポケモンでは1日のエナジーが減ります'}（${fmtPt(neg.pt)}）。`);
     const np = d.items[0].pt;
-    if (np >= 8) parts.push('せいかくもぴったりです。');
-    else if (np >= 3) parts.push('せいかくも向いています。');
-    else if (np <= -3) parts.push('せいかくは少しマイナスです。');
+    if (np >= 5) parts.push('せいかくもぴったりです。');
+    else if (np >= 2) parts.push('せいかくも向いています。');
+    else if (np <= -2) parts.push('せいかくは少しマイナスです。');
     else parts.push('せいかくの影響は小さめです。');
     const slu = rows.filter((r) => r.active && r.sub.slu > 0);
     if (slu.length) {
@@ -357,24 +341,26 @@
         : `${slu.map((r) => r.sub.ja).join('と')}は、メインスキルのたねの節約ぶんも含めて評価しています。`);
     }
     if (rows.some((r) => r.active && r.hbCut)) {
-      parts.push(`おてつだいボーナスは、${ind.sp.spec === 'I' ? '食材の数がれいせい' : 'スキルの回数がなまいき'}の個体に届かないので、チームへの効果を控えめに見ています。`);
+      parts.push(`おてつだいボーナスは、${d.tribe[0] === 'I' ? '食材の数がれいせい' : 'スキルの回数がなまいき'}の個体に届かないので、加点が控えめ（12→2.4）です。`);
     }
-    const later = rows.filter((r) => !r.active && r.unlock <= PSE.MAX_LEVEL && !r.sub.util && !seeded(r) && r.pt >= 10);
+    const later = rows.filter((r) => !r.active && r.unlock <= PSE.MAX_LEVEL && !r.sub.util && !seeded(r) && r.pt >= 4);
     if (later.length) parts.push(`Lv${later[0].unlock}で${later[0].sub.ja}が開くと、さらに伸びます。`);
     return parts.join('');
   }
 
-  // how this individual leans: nitoyon's 個体評価 (each axis against its own best nature and sub skills = 100)
-  function roleBars(ind, L) {
-    const c = refCalc(ind, L, null, 'me');
-    let r = null;
-    try { r = c ? REF.rating(c.iv) : null; } catch { r = null; }
-    if (!r) return '';
-    const own = { B: 'b', I: 'i', S: 's' }[ind.sp.spec];
-    const row = (k, lab, v) => `<div class="rb${k === own ? ' hl' : ''}"><span class="lab"><i class="sw ${k}"></i>${lab}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, v)).toFixed(1)}%"></i></span><span class="v num">${Math.round(v)}<small>pt</small></span></div>`;
+  // the three scores the rank is made of, each against its reference individual (= 100%)
+  function roleBars(ind, ev) {
+    const d = ev.ideal;
+    const own = d.tribe[0] === 'B' ? 'b' : d.tribe[0] === 'I' ? 'i' : 's';
+    const w = d.weights;
+    const row = (k, lab, v) => `<div class="rb${k === own ? ' hl' : ''}"><span class="lab"><i class="sw ${k}"></i>${lab}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, v)).toFixed(1)}%"></i></span><span class="v num">${Math.round(v)}<small>%</small></span></div>`;
+    const p = d.parts;
+    const bonus = [[p.hb, d.hbCut ? 'おてつだいボーナス（控えめ）' : 'おてつだいボーナス'], [p.bfs, 'きのみの数S'], [p.gold, 'スキルレベルアップ'], [p.side, '睡眠EXP・げんき回復ボーナス'], [p.exp, 'EXPのせいかく']]
+      .filter(([v]) => Math.abs(v) > 1e-9).map(([v, t]) => `${t} ${v > 0 ? '+' : '−'}${Math.abs(v)}`);
     return `<div class="role-bars">
-      <div class="rb-head">サブスキル・せいかくの向き<small>nitoyon さんの個体評価（それぞれの理想＝100pt）</small></div>
-      ${row('b', 'きのみ', r.berryScore)}${row('i', '食材', r.ingScore)}${row('s', 'スキル', r.skillScore)}
+      <div class="rb-head">理想個体比の内訳<small>きのみ×${w[0]}＋食材×${w[1]}＋スキル×${w[2]}${bonus.length ? '＋加点' : ''}（それぞれ基準の個体＝100%）</small></div>
+      ${row('b', 'きのみ', d.k)}${row('i', '食材', d.f)}${row('s', 'スキル', d.s)}
+      ${bonus.length ? `<div class="rb-bonus">加点: ${esc(bonus.join('・'))}</div>` : ''}
     </div>`;
   }
 
@@ -429,7 +415,7 @@
           <span class="subline">同じポケモンの${ev.n.toLocaleString('ja-JP')}通りの中では上位${fmtTop(ev.role.top)}（${BASIS[ind.sp.spec]}で比較）</span>
         </div>
       </div>
-      ${roleBars(ind, ev.L)}
+      ${roleBars(ind, ev)}
       <p class="summary">${esc(summaryText(ind, ev))}</p>
       <div class="lv-strip" id="lvStrip" role="group" aria-label="評価するレベル" style="grid-template-columns:repeat(${levels.length},minmax(0,1fr))">${stripHtml(ind, evs, levels)}</div>
       <p class="note">ランクの目安（だいふくさんの個体値チェッカーの${esc(d.tribeJa)}・Lv${d.table}基準）: ${scale}</p>`;
@@ -439,10 +425,10 @@
   // pt: share of the ideal individual's total (%)
   function verdictFor(pt, sub) {
     if (sub && sub.util) return { v: 'support', t: 'サポート' };
-    if (pt >= 20) return { v: 'great', t: '◎ 大当たり' };
-    if (pt >= 10) return { v: 'good', t: '○ 当たり' };
-    if (pt >= 3) return { v: 'ok', t: '△ ちょい足し' };
-    if (pt <= -3) return { v: 'bad', t: '▼ マイナス' };
+    if (pt >= 8) return { v: 'great', t: '◎ 大当たり' };
+    if (pt >= 4) return { v: 'good', t: '○ 当たり' };
+    if (pt >= 1.5) return { v: 'ok', t: '△ ちょい足し' };
+    if (pt <= -1.5) return { v: 'bad', t: '▼ マイナス' };
     return { v: 'none', t: '− 効果うすい' };
   }
   // why a sub skill lowers what this specialty brings
@@ -474,9 +460,9 @@
     return `${up}。${down}。`;
   }
   function natureVerdict(pt) {
-    if (pt >= 8) return { v: 'great', t: '◎ ぴったり' };
-    if (pt >= 3) return { v: 'good', t: '○ 向いている' };
-    if (pt > -3) return { v: 'ok', t: '△ 影響小' };
+    if (pt >= 5) return { v: 'great', t: '◎ ぴったり' };
+    if (pt >= 2) return { v: 'good', t: '○ 向いている' };
+    if (pt > -2) return { v: 'ok', t: '△ 影響小' };
     return { v: 'bad', t: '× 向いていない' };
   }
   function patternInfo(ind) {
@@ -544,7 +530,7 @@
       const lv = d.evalAt;
       const cW = refCalc(ind, lv, null, 'me');
       const cWo = refCalc(ind, lv, { subs: ind.subs.map((x, j) => (j === i ? null : x)) }, 'wo' + i);
-      let eff = s.util ? '' : `<span class="eff">理想個体比 ${fmtPt(d.pt)}</span>${s.slu && !state.maxSkill ? '（たねの節約ぶん込み）' : ''}${d.hbCut ? '（役割の量が少ないので控えめ）' : ''}`;
+      let eff = s.util ? (Math.abs(d.pt) >= 0.05 ? `<span class="eff">理想個体比 ${fmtPt(d.pt)}</span>。` : '') : `<span class="eff">理想個体比 ${fmtPt(d.pt)}</span>${s.slu && !state.maxSkill ? '（たねの節約ぶん込み）' : ''}${d.hbCut ? '（役割の量がれいせい・なまいきに届かないので控えめ）' : ''}`;
       if (!s.util && !(cW && cWo)) eff += '。';
       if (cW && cWo && !s.util) {
         const q1 = roleQty(spec, cW), q0 = roleQty(spec, cWo);
@@ -561,7 +547,7 @@
       const seeded = state.maxSkill && s.slu > 0;
       if (seeded) eff = 'メインスキルのたねでスキルレベルを最大にする前提なので、評価に入れていません。';
       const vd = seeded ? { v: 'none', t: '− たねで代わりがきく' } : verdictFor(d.pt, s);
-      const neg = d.pt <= -3 && !s.util && !seeded ? negReason(spec, s) : '';
+      const neg = d.pt <= -1.5 && !s.util && !seeded ? negReason(spec, s) : '';
       const lockNote = !d.active
         ? (u > PSE.MAX_LEVEL ? `Lv${u}で解放（いまの上限はLv${PSE.MAX_LEVEL}）。Lv${lv}で計算: ` : `Lv${u}で解放。Lv${lv}で計算: `)
         : '';
@@ -582,10 +568,10 @@
     }).join('');
     const best = ev.role.best;
     const idealSubs = best.subs.length ? best.subs.map((x) => esc(x.ja)).join('・') : '（サブスキルなし）';
-    const di = ev.ideal.ideal;
-    const dSubs = di.subs.length ? di.subs.map((x) => esc(x.ja)).join('・') : '（サブスキルなし）';
+    const refs = ev.ideal.refs;
+    const refText = (r) => `${esc(r.nature.ja)}${r.subs.length ? '＋' + r.subs.map((x) => esc(x.ja)).join('・') : ''}`;
     $('cardWhy').innerHTML = `
-      <h2 class="card-title">評価の内訳（Lv${L}・理想個体を100%として）</h2>
+      <h2 class="card-title">評価の内訳（Lv${L}・理想個体比で何pt変わるか）</h2>
       <div class="rows">${natureRow}</div>
       <h3 class="card-title">サブスキル（あり・なしの差）</h3>
       <div class="rows">${subRows}</div>
@@ -593,7 +579,7 @@
       <div class="rows">${ingRows}</div>
       ${ind.slots.some((x, i) => state.flags['ing' + i] && ind.level < [1, 30, 60][i]) ? '<p class="note">まだ解放されていない食材は画像から読めないので、仮の組み合わせで計算しています。違うときは「読み取り結果を直す」で選び直してください。</p>' : ''}
       <p class="note">この食材の組み合わせは、Lv60での食材の合計エナジーで ${pi.total}通り中 ${pi.rank}位です。</p>
-      <p class="ideal">100%にあたる理想個体（だいふくさんの${SPEC_TYPE[spec === 'A' ? 'S' : spec]}の基準・Lv${L}で開くぶん）: <b>${esc(di.nature.ja)}</b> ＋ ${dSubs}</p>
+      <p class="ideal">100%の基準（だいふくさんの方式・Lv${L}で開くぶん）: きのみ＝<b>${refText(refs.k)}</b>、食材＝<b>${refText(refs.f)}</b>、スキル＝<b>${refText(refs.s)}</b></p>
       <p class="note">${BASIS[spec]}がいちばん多くなる組み合わせは <b>${esc(best.nature.ja)}</b> ＋ ${idealSubs} です。</p>`;
   }
 
@@ -734,7 +720,7 @@
     renderVerdict(ind, ev, evCache, levels);
     renderNumbers(ind, state.evalLevel);
     renderWhy(ind, ev);
-    renderCheck(ind, chk);
+    renderCheck(raw, chk);
     for (const L of levels) {
       if (evCache[L]) continue;
       await sleep(0);
@@ -890,7 +876,7 @@
     };
   }
   // grades in the history are re-evaluated when the model or the settings change
-  const gradeSig = () => ['m4', state.sleepScore, state.fieldBonus, state.maxSkill ? 1 : 0, state.evolve ? 1 : 0, JSON.stringify(state.evoPick)].join('|');
+  const gradeSig = () => ['m5', state.sleepScore, state.fieldBonus, state.maxSkill ? 1 : 0, state.evolve ? 1 : 0, JSON.stringify(state.evoPick)].join('|');
   let regrading = 0;
   async function regradeHistory() {
     const my = ++regrading;
@@ -938,7 +924,7 @@
       const subs = (o.s || []).filter(Boolean).map((k) => PSE.SUB_BY_K[k]?.ja).filter(Boolean).slice(0, 3).join('・');
       return `<div class="h-item">
         <button type="button" class="h-open" data-h="${i}"><b>${esc(name)}</b> Lv.${o.lv}・${esc(o.n)}<span>${d}｜${esc(subs)}</span></button>
-        <span class="h-grade${String(o.g || '').length > 1 ? ' two' : ''}" style="color:var(--g${rankKey(o.g)})" title="Lv60のランク${o.p != null && o.gs && o.gs.startsWith('m4') ? `（理想個体の${o.p}%）` : ''}">${esc(o.g || '')}</span>
+        <span class="h-grade${String(o.g || '').length > 1 ? ' two' : ''}" style="color:var(--g${rankKey(o.g)})" title="Lv60のランク${o.p != null && o.gs && o.gs.startsWith('m5') ? `（理想個体の${o.p}%）` : ''}">${esc(o.g || '')}</span>
         <button type="button" class="h-del" data-hdel="${i}" aria-label="${esc(name)}を履歴から消す">×</button>
       </div>`;
     }).join('');

@@ -173,7 +173,7 @@
         const matched = ph.text.slice(m.start, m.end);
         // names ending in S / M / L must show that letter (the "ボーナス" ones have none)
         if (/[SML]$/.test(norm(m.c.ja)) && !SUB_SUFFIX.test(matched) && !SUB_SUFFIX.test(ph.text)) continue;
-        hits.push({ sub: m.c, cost: m.cost, margin: m.margin, x: cx(ph.bbox), y: cy(ph.bbox), pass: l.pass });
+        hits.push({ sub: m.c, cost: m.cost, margin: m.margin, x: cx(ph.bbox), y: cy(ph.bbox), pass: l.pass, bbox: ph.bbox });
         subLines.add(l);
       }
     }
@@ -208,6 +208,29 @@
         return Math.min(2, base + r0);
       });
     }
+    // the box color settles S / M (a misread letter is common on the pale, locked boxes)
+    const FAMILY = [
+      { re: /^おてつだいスピード/, white: 'おてつだいスピードS', blue: 'おてつだいスピードM' },
+      { re: /^食材確率アップ/, white: '食材確率アップS', blue: '食材確率アップM' },
+      { re: /^スキル確率アップ/, white: 'スキル確率アップS', blue: 'スキル確率アップM' },
+      { re: /^最大所持数アップ/, white: '最大所持数アップS', blue: ['最大所持数アップM', '最大所持数アップL'] },
+      { re: /^スキルレベルアップ/, blue: 'スキルレベルアップS', gold: 'スキルレベルアップM' },
+    ];
+    const subColors = [];
+    if (img.boxColor) {
+      for (const b of boxes) {
+        const color = b.bbox ? img.boxColor(b.bbox) : null;
+        subColors.push(`${b.sub.ja}:${color || '?'}`);
+        const fam = color && FAMILY.find((f) => f.re.test(norm(b.sub.ja)));
+        const want = fam && fam[color];
+        if (!want) continue;
+        const names = Array.isArray(want) ? want : [want];
+        if (names.some((n) => norm(n) === norm(b.sub.ja))) continue;
+        const to = vocab.subskills.find((x) => norm(x.ja) === norm(names[0]));
+        if (to) { b.colorFixed = `${b.sub.ja}→${to.ja}`; b.sub = to; if (names.length > 1) b.margin = 0; }
+      }
+    }
+    out.debug.subColors = subColors;
     const slots = [null, null, null, null, null];
     boxes.forEach((b, i) => {
       const slot = rows[i] * 2 + (b.x < W / 2 ? 0 : 1);

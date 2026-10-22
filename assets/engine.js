@@ -564,7 +564,6 @@ const PSE = (function () {
     out.berries = berries; out.ings = a.ingCnt; out.skills = a.skill; out.nightSkills = a.skill - awakeSkills;
     out.freq = baseFreq; out.ir = ir; out.sr = p; out.bc = bc; out.carry = carry;
     out.overflowHelps = a.sneaky; out.nightOverflow = a.sneaky - awakeSneaky; out.skillLevel = sl;
-    out.ingStrRaw = a.ingStr;
     return out;
   }
   const EMPTY_TOT = sumSubs([]);
@@ -603,13 +602,6 @@ const PSE = (function () {
       return trigMemo.get(sl);
     } : null;
     ctx.teamPerHelp = opts.teamPerHelp || 0;
-    // the reference teammate (raw figures at field bonus 0) under the ideal-ratio model's weights
-    const tp = opts.teamParts;
-    if (tp) {
-      const e = tp.berry * D.berry + (tp.ing / ING_FACTOR) * D.ing;
-      ctx.teamHBd = 4 * (e + tp.skill) * (1 / 0.95 - 1);
-      ctx.teamPerHelpD = tp.helps > 0 ? e / tp.helps : 0;
-    } else { ctx.teamHBd = 0; ctx.teamPerHelpD = 0; }
     // team-effect baselines: 4 teammates assumed to be this species with neutral nature, no sub skills
     // (Energy Recovery Bonus has no team effect here, as in the reference calculator)
     const b0 = dailyOwn(ctx, NEUTRAL, EMPTY_TOT, 0, 0);
@@ -726,29 +718,18 @@ const PSE = (function () {
   }
 
   // ---------- ideal ratio (the approach of だいふく's 個体値チェッカー) ----------
-  // Every sub skill and the nature is valued by how much it changes one day's energy from a standard
-  // individual (neutral nature, no sub skills) of the same Pokémon at the same level. The sum for the
-  // individual is shown as a percentage of the same sum for a fixed ideal individual of its specialty,
-  // and ranked with that checker's published thresholds (the Lv60 table, and the Lv70 table at Lv70+).
-  // The day's energy is the reference calculator's (helps, inventory, skill triggers), weighted as that
-  // checker's published model: berries are favorite berries (x2) and ingredients get recipe level +
-  // recipe bonus = +125% (x2.25). Skills count as energy; a skill that brings no energy itself (げんき,
-  // ゆめのかけら, 料理チャンス...) counts as the skill value of the in-game SP formula, doubled like the
-  // berries, since what it brings back is more helping from a team whose berries are favorite berries.
-  // Fitted to results published from that checker (Lv60, all options on): Helping Bonus's effect on the
-  // other 4 members counts 60% of the reference teammate's; Skill Level Up also saves Main Skill Seeds
-  // (its 金種節約効果), so the energy it adds counts twice; an ingredient specialist's berries count as
-  // ordinary berries (x1). That checker's 2026-07 change: an ingredient (skill) specialist bringing fewer
-  // ingredients (skills) than a れいせい (なまいき) individual with no sub skills gets less for Helping
-  // Bonus (taken as half of its team effect here).
-  const D = { berry: 2, ing: 2.25, support: 2, hbTeam: 0.6, sluSeed: 1, hbLowRole: 0.5, berryI: 1, ingI: 2.25 };
-  const NITO_DISH = 1.25 * 1.61; // the reference calculator's dish factor for skill ingredients
-  // ideal individuals in sub skill unlock order (the checker's FAQ; its Lv75 / Lv100 slots open at Lv70 / Lv80 now)
-  const D_IDEAL = {
-    B: { nature: 'いじっぱり', subs: ['BFS', 'HB', 'HSM', 'HSS', 'INL'] },
-    I: { nature: 'うっかりや', subs: ['HB', 'BFS', 'IFM', 'HSS', 'INL'] },
-    S: { nature: 'しんちょう', subs: ['BFS', 'STS', 'SLM', 'HSM', 'INL'] },
-  };
+  // Reproduces that checker's published results (fitted on several hundred of its answers; the formula itself
+  // is not published). One day is counted with a constant helping speed (energy assumed full: x0.45), items
+  // collected often while awake (15.5 h) and not at all while asleep (8.5 h): once the inventory is full at
+  // night, helps bring berries only, and at most 2 skills are kept until morning.
+  // Three scores compare the individual with a fixed reference individual of the same Pokémon and level
+  // (100%): berries vs. さみしがり + きのみの数S・おてつだいスピードM・おてつだいスピードS・おてつだいボーナス,
+  // ingredients vs. うっかりや + 食材確率アップM・S・おてつだいスピードM・S, skill triggers vs. なまいき +
+  // スキル確率アップM・S・おてつだいスピードM・S (as many sub skills as are open at that level).
+  // The ideal ratio is their weighted sum for the Pokémon's specialty pattern (9 patterns), plus points for
+  // おてつだいボーナス (12, or 2.4 when an ingredient / skill specialist brings less than a れいせい / なまいき
+  // individual), きのみの数S for ⑦ (11), スキルレベルアップ's seed saving (M, S = half), 睡眠EXPボーナス (3),
+  // げんき回復ボーナス (1) and EXP natures (+1 / -1).
   const D_RANKS = ['増田', 'SS', 'S', 'A', 'B', 'C', 'D'];
   // lower bounds (%) of 増田 / SS / S / A / B / C; below the last one is D
   const D_TABLE = {
@@ -768,98 +749,120 @@ const PSE = (function () {
     IB: ['④', 'きのみ型食材得意'], I: ['⑤', '食材得意'], IS: ['⑥', 'スキル型食材得意'],
     SB: ['⑦', 'きのみ型スキル得意'], SI: ['⑧', '食材型スキル得意'], S: ['⑨', 'スキル得意'],
   };
-  const ownKind = (sp) => (sp.spec === 'B' || sp.spec === 'I' ? sp.spec : 'S');
-  // energy the main skill brings in a day under the ideal-ratio model
-  function dSkillEnergy(ctx, sl, count, ownPerHelp) {
-    if (!(count > 0)) return 0;
-    const skill = ctx.sp.skill;
-    const rp = skillValue(skill, sl) * D.support;
-    const t = ctx.skillTrig ? ctx.skillTrig(sl) : null;
-    if (!t) return count * rp;
-    const fb = 1 + (ctx.fieldBonus || 0) / 100;
-    const avgPerHelp = (ownPerHelp + 4 * (ctx.teamPerHelpD || 0)) / 5;
-    if (skill === 'Helper Boost') return count * t.per * avgPerHelp * 5;
-    if (skill === 'Extra Helpful S') return count * t.per * avgPerHelp;
-    if (skill === 'Energizing Cheer S (Heal Pulse)') return count * Math.max(rp, t.per2 * avgPerHelp * 2);
-    if (!(t.str > 0)) return count * rp;
-    if (/^Ingredient (Magnet|Draw)|^Cooking (Power-Up|Assist|Advance)/.test(skill)) return (count * t.str * D.ing) / (fb * NITO_DISH);
-    if (/^Berry (Burst|Zone)/.test(skill)) return (count * t.str * D.berry) / fb;
-    return (count * t.str) / fb;
+  // weights of the berry / ingredient / skill scores (② and ⑧ have no Pokémon now; theirs are guesses)
+  const D_W = {
+    B: [0.9, 0.01, 0.09], BI: [0.9, 0.21, 0.09], BS: [0.9, 0.09, 0.21], IB: [0.4, 0.7, 0.1], I: [0.2, 0.7, 0.1],
+    IS: [0.2, 0.7, 0.3], SB: [0.3, 0.2, 0.7], SI: [0.1, 0.4, 0.7], S: [0.1, 0.2, 0.7],
+  };
+  // points for スキルレベルアップM (S: half) as Main Skill Seed saving
+  const D_GOLD = { B: 3, BI: 3, BS: 5, IB: 3, I: 3, IS: 5, SB: 5, SI: 10, S: 10 };
+  // the specialty pattern of each final form, as the checker shows it
+  const D_TRIBE_OF = (() => {
+    const t = {
+    B: ["Altaria", "Arbok", "Banette", "Blaziken", "Butterfree", "Dodrio", "Eevee (Holiday)", "Empoleon", "Feraligatr", "Houndoom", "Marowak", "Meganium", "Onix", "Pikachu (Captain)", "Pikachu (Halloween)", "Primeape", "Raichu", "Raticate", "Salamence", "Steelix", "Tinkaton", "Typhlosion", "Tyrantrum", "Walrein", "Xatu"],
+    BS: ["Clefable", "Musharna", "Ninetales", "Ninetales (Alola)", "Slaking", "Swampert", "Vigoroth", "Weavile"],
+    I: ["Abomasnow", "Absol", "Amoonguss", "Bewear", "Blastoise", "Blissey", "Cetitan", "Charizard", "Clodsire", "Delibird", "Ditto", "Dragonite", "Dugtrio", "Farfetch'd", "Flygon", "Gengar", "Golem", "Gourgeist (Jumbo)", "Gourgeist (Large)", "Gourgeist (Medium)", "Gourgeist (Small)", "Kangaskhan", "Luxray", "Mr. Mime", "Pinsir", "Quagsire", "Quaquaval", "Ribombee", "Skeledirge", "Toxicroak", "Tyranitar", "Venusaur", "Victreebel", "Vikavolt"],
+    IB: ["Aggron", "Meowscarada"],
+    IS: ["Comfey", "Cramorant", "Drampa", "Mawile", "Spiritomb"],
+    S: ["Ampharos", "Arcanine", "Cresselia", "Crustle", "Darkrai", "Dedenne", "Drifblim", "Eevee (Halloween)", "Entei", "Espeon", "Flareon", "Gallade", "Gardevoir", "Glaceon", "Golduck", "Hawlucha", "Heracross", "Honchkrow", "Jolteon", "Leafeon", "Lucario", "Magnezone", "Mew", "Mewtwo", "Minun", "Pawmot", "Persian", "Pikachu (Holiday)", "Plusle", "Raikou", "Sableye", "Sandslash", "Shuckle", "Slowbro", "Slowking", "Spheal (Holiday)", "Sudowoodo", "Suicune", "Swalot", "Sylveon", "Togedemaru", "Togekiss", "Torterra", "Toxtricity (Amped)", "Toxtricity (Low Key)", "Umbreon", "Vaporeon", "Wigglytuff", "Wobbuffet"],
+    SB: ["Braviary", "Infernape", "Latias", "Latios", "Mimikyu", "Noivern", "Sceptile"],
+  };
+    const m = {};
+    for (const [k, list] of Object.entries(t)) for (const en of list) m[en] = k;
+    return m;
+  })();
+  const D_REF = {
+    k: { nature: 'さみしがり', subs: ['BFS', 'HSM', 'HSS', 'HB'] },
+    f: { nature: 'うっかりや', subs: ['IFM', 'IFS', 'HSM', 'HSS'] },
+    s: { nature: 'なまいき', subs: ['STM', 'STS', 'HSM', 'HSS'] },
+  };
+  function dTribe(sp) {
+    if (D_TRIBE_OF[sp.en]) return D_TRIBE_OF[sp.en];
+    // a pre-evolution: the pattern of its final form
+    const fin = SPECIES.find((x) => x.anc === sp.anc && x.el === 0 && D_TRIBE_OF[x.en]);
+    if (fin) return D_TRIBE_OF[fin.en];
+    return sp.spec === 'B' ? 'B' : sp.spec === 'I' ? 'I' : 'S';
   }
-  const dKey = (n, t) => n.i + '|' + t.hs + ',' + t.ingf + ',' + t.st + ',' + t.inv + ',' + t.slu + ',' + t.bfs + ',' + t.hb + ',' + t.erb;
-  function dValue(ctx, nature, tot) {
-    const cache = ctx.dCache || (ctx.dCache = new Map());
-    const k = dKey(nature, tot);
-    let r = cache.get(k);
-    if (r) return r;
-    const o = core(ctx, nature, tot, tot.hb ? 1 : 0, 0, {});
-    const isI = ctx.sp.spec === 'I';
-    const berryE = berryStrength(ctx.sp.type, ctx.level) * (isI ? D.berryI : D.berry) * o.berries;
-    const ingE = o.ingStrRaw * (isI ? D.ingI : D.ing);
-    const skillE = dSkillEnergy(ctx, o.skillLevel, o.skills, o.helps > 0 ? (berryE + ingE) / o.helps : 0);
-    const teamE = tot.hb ? (ctx.teamHBd || 0) * D.hbTeam : 0;
-    r = { v: berryE + ingE + skillE + teamE, berryE, ingE, skillE, teamE, skills: o.skills, berries: o.berries, ings: o.ings, skillLevel: o.skillLevel };
-    cache.set(k, r);
-    return r;
+  // one day under the checker's model
+  function dDay(ctx, nature, tot, hbSelf = true) {
+    const sp = ctx.sp, level = ctx.level;
+    const f = Math.min(tot.hs * 0.07 + (tot.hb && hbSelf ? 0.05 : 0), 0.35);
+    const helpTime = sp.freq * trunc(((501 - level) / 500) * natSpeed(nature) * (1 - f), 4);
+    if (!(helpTime > 0)) return { berries: 0, ings: 0, skills: 0 };
+    const iv = helpTime * 0.45;
+    const Hd = 55800 / iv, Hn = 30600 / iv;
+    const pi = trunc((sp.ir / 100) * natIng(nature) * (1 + tot.ingf * 0.18), 4);
+    const ps = trunc((sp.sr / 100) * natSkill(nature) * (1 + tot.st * 0.18), 4);
+    const bc = berryCount(sp, tot);
+    const avg = ctx.dAvgIng;
+    const u = (1 - pi) * bc + pi * avg;
+    const carry = sp.carry + 5 * Math.max(0, sp.ev) + 6 * tot.inv;
+    const sneaky = u > 0 ? Math.max(0, Hn - carry / u) : 0;
+    const normal = Hd + Hn - sneaky;
+    return { berries: normal * (1 - pi) * bc + sneaky * bc, ings: normal * pi * avg, skills: Hd * ps + Math.min((Hn - sneaky) * ps, 2) };
   }
-  // change from the standard individual when only this nature / this sub skill is added
-  function dItem(ctx, nature, sub) {
-    const std = dValue(ctx, NEUTRAL, EMPTY_TOT).v;
-    const d = dValue(ctx, nature || NEUTRAL, sub ? sumSubs([sub]) : EMPTY_TOT).v - std;
-    return sub && sub.slu ? d * (1 + D.sluSeed) : d;
+  function dRefs(ctx) {
+    if (ctx.dRefs) return ctx.dRefs;
+    const open = UNLOCK.filter((u) => ctx.level >= u).length;
+    const q = (key, field) => {
+      const r = D_REF[key];
+      return dDay(ctx, NATURE_BY_JA[r.nature], sumSubs(r.subs.slice(0, open).map((k) => SUB_BY_K[k])))[field];
+    };
+    ctx.dRefs = { k: q('k', 'berries'), f: q('f', 'ings'), s: q('s', 'skills'), open };
+    return ctx.dRefs;
   }
-  function dIdeal(ctx, kind) {
-    const def = D_IDEAL[kind];
-    const nature = NATURE_BY_JA[def.nature];
-    const subs = def.subs.map((k, i) => (ctx.level >= UNLOCK[i] ? SUB_BY_K[k] : null)).filter(Boolean);
-    const v = dItem(ctx, nature, null) + subs.reduce((a, s) => a + dItem(ctx, null, s), 0);
-    return { kind, nature, subs, v };
-  }
-  // the specialty pattern: another specialty's ideal individual bringing more than its own ideal
-  function dTribe(ctx) {
-    const own = ownKind(ctx.sp);
-    // a skill specialist whose skill gathers berries is berry-oriented
-    if (own === 'S' && /^Berry (Burst|Zone)/.test(ctx.sp.skill)) return 'SB';
-    const g0 = dIdeal(ctx, own).v;
-    let best = '', r = 1;
-    if (g0 > 0) {
-      for (const k of ['B', 'I', 'S']) {
-        if (k === own) continue;
-        const q = dIdeal(ctx, k).v / g0;
-        if (q > r + 1e-9) { r = q; best = k; }
+  function dScore(ctx, nature, subs, tribe) {
+    const tot = sumSubs(subs);
+    const me = dDay(ctx, nature, tot);
+    const R = dRefs(ctx);
+    const k = R.k > 0 ? (me.berries / R.k) * 100 : 0;
+    const f = R.f > 0 ? (me.ings / R.f) * 100 : 0;
+    const s = R.s > 0 ? (me.skills / R.s) * 100 : 0;
+    const w = D_W[tribe];
+    const parts = { hb: 0, bfs: 0, gold: 0, side: 0, exp: 0 };
+    let hbCut = false;
+    if (tot.hb) {
+      let ok = true;
+      if (tribe[0] !== 'B') {
+        const role = tribe[0] === 'I' ? 'ings' : 'skills';
+        const val = dDay(ctx, nature, tot, false)[role];
+        const thr = dDay(ctx, NATURE_BY_JA[role === 'ings' ? 'れいせい' : 'なまいき'], EMPTY_TOT)[role];
+        ok = val >= thr - 1e-9;
       }
+      parts.hb = ok ? 12 : 2.4;
+      hbCut = !ok;
     }
-    return own + best;
+    if (tribe === 'SB' && tot.bfs) parts.bfs = 11;
+    if (!ctx.maxSkill) parts.gold = (D_GOLD[tribe] * tot.slu) / 2;
+    if (subs.some((x) => x.k === 'SEB')) parts.side += 3;
+    if (subs.some((x) => x.k === 'ERB')) parts.side += 1;
+    parts.exp = nature && nature.up === 'exp' ? 1 : nature && nature.down === 'exp' ? -1 : 0;
+    const pct = w[0] * k + w[1] * f + w[2] * s + parts.hb + parts.bfs + parts.gold + parts.side + parts.exp;
+    return { pct, k, f, s, parts, hbCut };
   }
   function dRank(pct, tribe, level) {
     const t = D_TABLE[level >= 70 ? 70 : 60][tribe] || D_TABLE[60].S;
-    if (pct > t[0] + 1e-9) return '増田';
-    for (let i = 1; i < t.length; i++) if (pct >= t[i] - 1e-9) return D_RANKS[i];
+    for (let i = 0; i < t.length; i++) if (pct >= t[i] - 1e-9) return D_RANKS[i];
     return 'D';
   }
-  // whether the individual brings at least what a れいせい / なまいき individual without sub skills brings
-  function dRoleOk(ctx, nature, subs) {
-    const own = ownKind(ctx.sp);
-    if (own === 'B') return true;
-    const me = dValue(ctx, nature, sumSubs(subs));
-    const ref = dValue(ctx, NATURE_BY_JA[own === 'I' ? 'れいせい' : 'なまいき'], EMPTY_TOT);
-    return own === 'I' ? me.ings >= ref.ings - 1e-9 : me.skills >= ref.skills - 1e-9;
-  }
-  /** ctx: context at the evaluation level, ctxTribe: context at Lv60 (where the specialty pattern is decided) */
-  function idealRatio(ctx, nature, subs, ctxTribe) {
-    const ideal = dIdeal(ctx, ownKind(ctx.sp));
-    const roleOk = dRoleOk(ctx, nature, subs);
-    const hbCut = roleOk ? 0 : (ctx.teamHBd || 0) * D.hbTeam * D.hbLowRole;
-    const items = [{ nature, v: dItem(ctx, nature, null) }].concat(subs.map((s) => ({ sub: s, v: dItem(ctx, null, s) - (s.hb ? hbCut : 0), hbCut: s.hb && hbCut > 0 })));
-    const total = items.reduce((a, x) => a + x.v, 0);
-    const pt = (v) => (ideal.v > 0 ? (v / ideal.v) * 100 : 0);
-    items.forEach((x) => { x.pt = pt(x.v); });
-    const pct = pt(total);
-    const tribe = dTribe(ctxTribe || ctx);
+  /** the checker's ideal ratio of an individual at ctx.level; items: what the nature and each sub skill add (points) */
+  function idealRatio(ctx, nature, subs) {
+    if (!ctx.dAvgIng) {
+      const n = ctx.level < 30 ? 1 : ctx.level < 60 ? 2 : 3;
+      const c = (ctx.slots || []).slice(0, n).filter((x) => x && x.count > 0).map((x) => x.count);
+      ctx.dAvgIng = c.length ? c.reduce((a, b) => a + b, 0) / c.length : 0;
+    }
+    const tribe = dTribe(ctx.sp);
+    const me = dScore(ctx, nature, subs, tribe);
+    const items = [{ nature, pt: me.pct - dScore(ctx, NEUTRAL, subs, tribe).pct }]
+      .concat(subs.map((x) => ({ sub: x, pt: me.pct - dScore(ctx, nature, subs.filter((y) => y !== x), tribe).pct, hbCut: !!(x.hb && me.hbCut) })));
     const table = ctx.level >= 70 ? 70 : 60;
+    const open = dRefs(ctx).open;
+    const refs = Object.fromEntries(Object.entries(D_REF).map(([key, r]) => [key, { nature: NATURE_BY_JA[r.nature], subs: r.subs.slice(0, open).map((k) => SUB_BY_K[k]) }]));
     return {
-      pct, rank: dRank(pct, tribe, ctx.level), tribe, tribeNo: D_TRIBES[tribe][0], tribeJa: D_TRIBES[tribe][1],
-      table, bounds: D_TABLE[table][tribe], items, ideal, std: dValue(ctx, NEUTRAL, EMPTY_TOT), me: total, roleOk,
+      pct: me.pct, rank: dRank(me.pct, tribe, ctx.level), tribe, tribeNo: D_TRIBES[tribe][0], tribeJa: D_TRIBES[tribe][1],
+      table, bounds: D_TABLE[table][tribe], weights: D_W[tribe], k: me.k, f: me.f, s: me.s, parts: me.parts, hbCut: me.hbCut,
+      items, refs, std: dScore(ctx, NEUTRAL, [], tribe).pct,
     };
   }
 
@@ -882,7 +885,6 @@ const PSE = (function () {
       level: lv, skillLevelBase, slots: ind.slots, carryBase, ribbon: ind.ribbon || 0, sleepScore: ind.sleepScore || 100,
       fieldBonus: env.fieldBonus || 0, e4eCount: env.e4eCount ?? 3, e4eEnergy: env.e4eEnergy ?? 18,
       teamHBStr: env.teamHBStr, teamPerHelp: env.teamPerHelp, skillTrigger: env.skillTrigger, maxSkill: !!env.maxSkill,
-      teamParts: env.teamParts,
     });
     const ctx = mk(L);
     const ctxCache = { [L]: ctx };
@@ -905,7 +907,7 @@ const PSE = (function () {
 
     // ideal ratio (the approach of だいふく's checker); the specialty pattern is decided at Lv60
     const idealAt = {};
-    const idealFor = (lv) => idealAt[lv] || (idealAt[lv] = idealRatio(ctxAt(lv), ind.nature, activeSubs(ind.subs, lv), ctxAt(60)));
+    const idealFor = (lv) => idealAt[lv] || (idealAt[lv] = idealRatio(ctxAt(lv), ind.nature, activeSubs(ind.subs, lv)));
     const ideal = idealFor(L);
     const subDetails = ind.subs.map((s, i) => {
       if (!s) return null;
@@ -984,7 +986,7 @@ const PSE = (function () {
 
   return {
     loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energySegments, deriveBase, naturesFor, formForNature,
-    idealRatio, dRank, D_IDEAL, D_TABLE, D_TRIBES, D_RANKS, _dValue: dValue, _D: D,
+    idealRatio, dRank, dTribe, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },

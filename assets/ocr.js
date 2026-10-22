@@ -88,6 +88,37 @@
     };
   }
 
+  // Sub skill boxes are colored by rarity (white: S of speed / ingredient / skill trigger / inventory;
+  // blue: their M (and 最大所持数アップM・L), スキルレベルアップS; gold: きのみの数S, スキルレベルアップM, bonuses),
+  // also when the slot is still locked (paler). The color settles S / M when the letter is misread.
+  function boxColorSampler(canvas) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const W = canvas.width, H = canvas.height;
+    const classify = (r, g, b) => {
+      if (Math.max(r, g, b) - Math.min(r, g, b) <= 6 && Math.min(r, g, b) >= 236) return 'white';
+      if (b - r >= 8 && b >= 225 && g >= r) return 'blue';
+      if (r >= 225 && r - b >= 25 && g >= b) return 'gold';
+      return null;
+    };
+    const at = (x, y) => {
+      x = Math.round(x); y = Math.round(y);
+      if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) return null;
+      const d = ctx.getImageData(x - 1, y - 1, 3, 3).data;
+      let r = 0, g = 0, b = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      return classify(r / 9, g / 9, b / 9);
+    };
+    return (bb) => {
+      const cy = (bb.y0 + bb.y1) / 2, cx = (bb.x0 + bb.x1) / 2;
+      const pts = [[bb.x0 - 0.02 * W, cy], [bb.x0 - 0.035 * W, cy], [bb.x1 + 0.02 * W, cy], [bb.x1 + 0.035 * W, cy],
+        [cx, bb.y0 - 0.008 * W], [cx, bb.y1 + 0.008 * W]];
+      const votes = {};
+      for (const [x, y] of pts) { const c = at(x, y); if (c) votes[c] = (votes[c] || 0) + 1; }
+      const best = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
+      return best && best[1] >= 3 ? best[0] : null;
+    };
+  }
+
   // ---- ingredient counts ("x4") on the badges under the "Lv.30" / "Lv.60" lock labels ----
   // The Japanese model misreads these Latin digits, so a small English model reads them.
   let engPromise = null;
@@ -283,7 +314,7 @@
       const bmp = await loadBitmap(file);
       const base = toCanvas(bmp, 1300);
       if (bmp.close) bmp.close();
-      const img = { width: base.width, height: base.height, passes: [], arrowAt: arrowSampler(base) };
+      const img = { width: base.width, height: base.height, passes: [], arrowAt: arrowSampler(base), boxColor: boxColorSampler(base) };
       const plan = [() => base, () => variant(base, 'th150')];
       for (let i = 0; i < plan.length; i++) {
         if (onProgress) onProgress({ status: 'pass', pass: i + 1, total: plan.length });
@@ -300,6 +331,7 @@
         if (onProgress) onProgress({ status: 'counts' });
         try { res.ingredients = await readIngredientRow(base, res.lockLabels); } catch (e) { res.ingredients = []; }
       }
+      window.OCR.last = res; // kept for troubleshooting
       return res;
     } finally {
       progressFn = null;
