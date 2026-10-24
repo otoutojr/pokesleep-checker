@@ -399,29 +399,26 @@
     }).join('');
   }
 
-  // Where the ratio sits among the rank bands of this Pokémon's group (the published thresholds).
+  // Where the ratio sits among the rank bands of this Pokémon's group (the published thresholds):
+  // one equal step per rank, the marker placed inside its own band.
   function rankRuler(d, key) {
     const b = d.bounds; // 増田, SS, S, A, B, C
-    const lo = Math.max(0, Math.min(b[5] - 15, d.pct - 6));
-    const hi = Math.max(b[0] + 10, d.pct + 6);
-    const pos = (v) => Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
-    const edges = [lo, b[5], b[4], b[3], b[2], b[1], b[0], hi];
     const ranks = [['D', 'D'], ['C', 'C'], ['B', 'B'], ['A', 'A'], ['S', 'S'], ['SS', 'SS'], ['X', '増田']];
-    const fmtB = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)) + '%';
+    const edges = [0, b[5], b[4], b[3], b[2], b[1], b[0], b[0] + 15];
+    const n = ranks.length, w = 100 / n;
     const i = Math.max(0, ranks.findIndex(([k]) => k === key));
-    const segs = ranks.map(([k, lab], j) => `<span class="rr-seg${j === i ? ' on' : ''}" data-g="${k}" style="left:${pos(edges[j]).toFixed(2)}%;width:${(pos(edges[j + 1]) - pos(edges[j])).toFixed(2)}%"><b>${lab}</b></span>`).join('');
-    const lowB = i > 0 ? edges[i] : null, highB = i < ranks.length - 1 ? edges[i + 1] : null;
-    const tick = (at, text) => `<span class="rr-tick" style="left:${at.toFixed(2)}%">${text}</span>`;
-    // a narrow band gets one "61〜67%" label instead of two crowded ones
-    const ticks = lowB != null && highB != null && pos(highB) - pos(lowB) < 14
-      ? tick((pos(lowB) + pos(highB)) / 2, `${fmtB(lowB).slice(0, -1)}〜${fmtB(highB)}`)
-      : [lowB, highB].filter((v) => v != null).map((v) => tick(pos(v), fmtB(v))).join('');
-    const next = i < ranks.length - 1
+    const frac = Math.max(0.04, Math.min(0.96, (d.pct - edges[i]) / (edges[i + 1] - edges[i])));
+    const x = (i + frac) * w;
+    const fmtB = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)) + '%';
+    const segs = ranks.map(([k, lab], j) => `<span class="rr-seg${j === i ? ' on' : ''}" data-g="${k}" style="left:${(j * w).toFixed(3)}%;width:${w.toFixed(3)}%"><b>${lab}</b></span>`).join('');
+    const ticks = [i > 0 ? [i * w, edges[i]] : null, i < n - 1 ? [(i + 1) * w, edges[i + 1]] : null]
+      .filter(Boolean).map(([at, v]) => `<span class="rr-tick" style="left:${at.toFixed(3)}%">${fmtB(v)}</span>`).join('');
+    const next = i < n - 1
       ? `${ranks[i + 1][1]}まで あと${(edges[i + 1] - d.pct).toFixed(1)}%`
       : 'いちばん上のランクです';
-    const label = ranks.map(([, lab], j) => (j === 0 ? `${lab} ${fmtB(edges[1])}未満` : j === ranks.length - 1 ? `${lab} ${fmtB(edges[j])}超` : `${lab} ${fmtB(edges[j])}から`)).join('、');
+    const label = ranks.map(([, lab], j) => (j === 0 ? `${lab} ${fmtB(edges[1])}未満` : j === n - 1 ? `${lab} ${fmtB(edges[j])}超` : `${lab} ${fmtB(edges[j])}から`)).join('、');
     return `<div class="rank-ruler" role="img" aria-label="ランクの目安: ${label}。この個体は${fmtPct(d.pct)}で${d.rank}">
-        <div class="rr-track">${segs}<span class="rr-mark" style="--x:${pos(d.pct).toFixed(2)}%"></span></div>
+        <div class="rr-track">${segs}<span class="rr-mark" style="--x:${x.toFixed(2)}%"><span class="rr-val num">${fmtPct(d.pct)}</span></span></div>
         <div class="rr-ticks">${ticks}</div>
       </div>
       <p class="rr-next">${next}</p>`;
