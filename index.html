@@ -18,7 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=20261024-5">
+<link rel="stylesheet" href="assets/app.css?v=20261024-6">
 </head>
 <body>
 <header class="band">
@@ -132,6 +132,7 @@
         <li>進化前のポケモンは、だいふくさんと同じく最終進化の姿（進化のたびにスキルLv+1・所持数+5）で評価します。進化先が分かれるポケモンは、評価カードで進化先を選べます。</li>
         <li>「理想個体比の内訳」のバーは、きのみ・食材・スキルそれぞれを基準の個体と比べた量です。分類ごとの重みをかけて足したものが理想個体比になります。</li>
         <li>「同じポケモンの中では上位○%」は、せいかく25種とサブスキル17種のすべての組み合わせ（どれも同じ確率で出ると仮定）の中での順位です。きのみタイプはきのみ、食材タイプは食材、スキルタイプはスキル効果、オールタイプは総合エナジーで比べます。</li>
+        <li>ランクのバーは、理想個体比を0〜100%の目盛りで塗ったものです（100%＝理想の個体）。分類によっては100%を超えるので、そのときは目盛りを延ばしています。バーの下の「○の中で○位」は、同じポケモン・同じレベルで、せいかくとそのレベルで開いているサブスキルのすべての組み合わせ（サブスキルの順番は区別しない）を理想個体比の高い順に並べたときの、同じランクの中での順位です。同じ値の組み合わせは同じ順位にしています。</li>
         <li>「数値」のカードは、nitoyon さんの計算機の計算部分をそのまま組み込んで出しています（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・好みのきのみなし・起きている間は3時間ごとに所持品を回収し、寝ている間は回収しない前提）。フィールドボーナスと睡眠スコアは変えられます。</li>
         <li>ゆめのかけらボーナス・リサーチEXPボーナスは、理想個体比には入りません（「サポート」と表示します）。</li>
         <li>SP・おてつだい時間・最大所持数の計算式とポケモンのデータは <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT License）、SPの式は <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX</a> の調査にもとづきます。画面のSPと計算が一致すれば、読み取りは正しいと判断できます。</li>
@@ -158,13 +159,13 @@
   <p class="foot">データ更新: 2026年10月（ゲーム内レベル上限 Lv70、サブスキル解放 Lv10/25/50/70/80）</p>
   <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／ランクの基準: <a href="https://www.pokemonsleepdaifuku.com/checker/" target="_blank" rel="noopener">だいふくさんの個体値チェッカー</a>の公開情報／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）</p>
 </main>
-<script src="assets/data.js?v=20261024-5"></script>
-<script src="assets/nito.js?v=20261024-5"></script>
-<script src="assets/engine.js?v=20261024-5"></script>
-<script src="vendor/tesseract/tesseract.min.js?v=20261024-5"></script>
-<script src="assets/ocr-parse.js?v=20261024-5"></script>
-<script src="assets/ing-icons.js?v=20261024-5"></script>
-<script src="assets/ocr.js?v=20261024-5"></script>
-<script src="assets/app.js?v=20261024-5"></script>
+<script src="assets/data.js?v=20261024-6"></script>
+<script src="assets/nito.js?v=20261024-6"></script>
+<script src="assets/engine.js?v=20261024-6"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=20261024-6"></script>
+<script src="assets/ocr-parse.js?v=20261024-6"></script>
+<script src="assets/ing-icons.js?v=20261024-6"></script>
+<script src="assets/ocr.js?v=20261024-6"></script>
+<script src="assets/app.js?v=20261024-6"></script>
 </body>
 </html>

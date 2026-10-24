@@ -219,6 +219,36 @@ main.wrap { padding-top: 18px; padding-bottom: calc(40px + env(safe-area-inset-b
 .big { font-family: var(--f-display); font-weight: 900; font-size: 30px; line-height: 1.2; }
 .big small { font-size: 16px; font-weight: 700; color: var(--muted); margin-left: 6px; }
 .subline { font-size: 13px; color: var(--muted); }
+
+/* rank bar: the ideal ratio on a 0-100% scale with the rank bands */
+.rank-bar { --g: var(--gC); display: grid; }
+.rank-bar[data-g="X"], .rank-bar [data-g="X"] { --g: var(--gX); }
+.rank-bar[data-g="SS"], .rank-bar [data-g="SS"] { --g: var(--gSS); }
+.rank-bar[data-g="S"], .rank-bar [data-g="S"] { --g: var(--gS); }
+.rank-bar[data-g="A"], .rank-bar [data-g="A"] { --g: var(--gA); }
+.rank-bar[data-g="B"], .rank-bar [data-g="B"] { --g: var(--gB); }
+.rank-bar[data-g="C"], .rank-bar [data-g="C"] { --g: var(--gC); }
+.rank-bar[data-g="D"], .rank-bar [data-g="D"] { --g: var(--gD); }
+.rk-labels { position: relative; height: 20px; }
+.rk-l { position: absolute; bottom: 3px; transform: translateX(-50%); font-family: var(--f-display); font-weight: 700; font-size: 11.5px; line-height: 1; color: var(--g); opacity: .5; white-space: nowrap; }
+.rk-l.on { opacity: 1; font-weight: 900; font-size: 15px; }
+.rk-track { position: relative; height: 14px; border-radius: 999px; background: var(--plain-soft); overflow: hidden; }
+.rk-band { position: absolute; top: 0; bottom: 0; background: var(--g); opacity: .28; }
+.rk-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--g); border-radius: 0 999px 999px 0; }
+.rk-gap { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--surface); }
+.rk-scale { position: relative; height: 24px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.rk-t, .rk-v { position: absolute; top: 8px; line-height: 1; white-space: nowrap; transform: translateX(-50%); }
+.rk-t.s, .rk-v.s { transform: none; }
+.rk-t.e, .rk-v.e { transform: translateX(-100%); }
+.rk-v { top: 7px; font-family: var(--f-display); font-weight: 900; font-size: 13px; color: var(--g); }
+.rk-v::before { content: ""; position: absolute; left: 50%; top: -7px; width: 2px; height: 5px; margin-left: -1px; border-radius: 1px; background: var(--g); }
+.rk-v.s::before { left: 0; }
+.rk-v.e::before { left: auto; right: 0; margin: 0 -1px 0 0; }
+.rk-place { margin: 2px 0 0; font-size: 14px; line-height: 1.5; }
+.rk-place b { font-family: var(--f-display); font-weight: 900; }
+.rk-place b[data-g] { color: var(--g); }
+.rk-place b.num { font-size: 17px; white-space: nowrap; }
+.rk-next { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .summary { font-size: 15px; line-height: 1.7; }
 
 .lv-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }

@@ -845,13 +845,18 @@ const PSE = (function () {
     for (let i = 0; i < t.length; i++) if (pct >= t[i] - 1e-9) return D_RANKS[i];
     return 'D';
   }
-  /** the checker's ideal ratio of an individual at ctx.level; items: what the nature and each sub skill add (points) */
-  function idealRatio(ctx, nature, subs) {
-    if (!ctx.dAvgIng) {
+  // average ingredient count per ingredient help over the slots open at ctx.level
+  function dAvg(ctx) {
+    if (ctx.dAvgIng == null) {
       const n = ctx.level < 30 ? 1 : ctx.level < 60 ? 2 : 3;
       const c = (ctx.slots || []).slice(0, n).filter((x) => x && x.count > 0).map((x) => x.count);
       ctx.dAvgIng = c.length ? c.reduce((a, b) => a + b, 0) / c.length : 0;
     }
+    return ctx.dAvgIng;
+  }
+  /** the checker's ideal ratio of an individual at ctx.level; items: what the nature and each sub skill add (points) */
+  function idealRatio(ctx, nature, subs) {
+    dAvg(ctx);
     const tribe = dTribe(ctx.sp);
     const me = dScore(ctx, nature, subs, tribe);
     const items = [{ nature, pt: me.pct - dScore(ctx, NEUTRAL, subs, tribe).pct }]
@@ -864,6 +869,72 @@ const PSE = (function () {
       table, bounds: D_TABLE[table][tribe], weights: D_W[tribe], k: me.k, f: me.f, s: me.s, parts: me.parts, hbCut: me.hbCut,
       items, refs, std: dScore(ctx, NEUTRAL, [], tribe).pct,
     };
+  }
+
+  // ---------- where an ideal ratio stands among every combination ----------
+  // Every nature x every set of the sub skills open at the level (order not distinguished), as in the 上位○% figure.
+  // ゆめのかけらボーナス and リサーチEXPボーナス do not change the checker's score; every other sub skill can.
+  const D_NULL = SUBSKILLS.filter((x) => x.k === 'DSB' || x.k === 'REB');
+  const D_EFF = SUBSKILLS.filter((x) => !D_NULL.includes(x));
+  const dSigCache = new Map();
+  function dSignatures(k) {
+    // the k-sets of sub skills grouped by what the score depends on, with how many sets each group holds
+    if (dSigCache.has(k)) return dSigCache.get(k);
+    const map = new Map();
+    for (let m = Math.max(0, k - D_NULL.length); m <= Math.min(k, D_EFF.length); m++) {
+      const mult = choose(D_NULL.length, k - m);
+      combinations(D_EFF.length, m, (idx) => {
+        const subs = idx.map((i) => D_EFF[i]);
+        const t = sumSubs(subs);
+        const sig = [t.hs, t.ingf, t.st, t.inv, t.slu, t.bfs, t.hb, t.erb, subs.some((x) => x.k === 'SEB') ? 1 : 0].join(',');
+        const e = map.get(sig);
+        if (e) e.w += mult; else map.set(sig, { w: mult, subs });
+      });
+    }
+    const list = [...map.values()];
+    dSigCache.set(k, list);
+    return list;
+  }
+  const dSpreadCache = new Map();
+  function idealSpread(ctx) {
+    const key = [ctx.sp.idx, ctx.level, dAvg(ctx), ctx.maxSkill ? 'max' : 'cur'].join('|');
+    if (dSpreadCache.has(key)) return dSpreadCache.get(key);
+    const tribe = dTribe(ctx.sp);
+    const vals = [], ws = [];
+    for (const n of naturesFor(ctx.sp)) {
+      for (const g of dSignatures(activeCount(ctx.level))) { vals.push(dScore(ctx, n, g.subs, tribe).pct); ws.push(g.w); }
+    }
+    const order = vals.map((_, i) => i).sort((a, b) => vals[b] - vals[a]); // best first
+    const v = new Float64Array(order.length), cum = new Float64Array(order.length);
+    let c = 0;
+    order.forEach((i, j) => { v[j] = vals[i]; c += ws[i]; cum[j] = c; });
+    const r = { v, cum, total: c, tribe };
+    dSpreadCache.set(key, r);
+    if (dSpreadCache.size > 40) dSpreadCache.delete(dSpreadCache.keys().next().value);
+    return r;
+  }
+  // how many combinations score above x (ties excluded) / at least x (the bound test of dRank)
+  function dCountAbove(D, x) {
+    let lo = 0, hi = D.v.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (D.v[m] > x + 1e-9) lo = m + 1; else hi = m; }
+    return lo ? D.cum[lo - 1] : 0;
+  }
+  function dCountAtLeast(D, x) {
+    let lo = 0, hi = D.v.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (D.v[m] >= x - 1e-9) lo = m + 1; else hi = m; }
+    return lo ? D.cum[lo - 1] : 0;
+  }
+  /** the place of an ideal ratio among all combinations and inside its rank (ties share a place), and each rank's size */
+  function idealStanding(ctx, pct) {
+    const D = idealSpread(ctx);
+    const bounds = D_TABLE[ctx.level >= 70 ? 70 : 60][D.tribe] || D_TABLE[60].S;
+    // combinations at or above each rank's lower bound (増田, SS, S, A, B, C, then all for D)
+    const upTo = bounds.map((b) => dCountAtLeast(D, b)).concat([D.total]);
+    const counts = Object.fromEntries(D_RANKS.map((r, i) => [r, upTo[i] - (i ? upTo[i - 1] : 0)]));
+    const rank = dRank(pct, D.tribe, ctx.level);
+    const i = D_RANKS.indexOf(rank);
+    const above = dCountAbove(D, pct);
+    return { rank, total: D.total, place: above + 1, placeInRank: above - (i ? upTo[i - 1] : 0) + 1, inRank: counts[rank], counts };
   }
 
   // ---------- evaluate ----------
@@ -986,7 +1057,7 @@ const PSE = (function () {
 
   return {
     loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energySegments, deriveBase, naturesFor, formForNature,
-    idealRatio, dRank, dTribe, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
+    idealRatio, idealStanding, dRank, dTribe, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },

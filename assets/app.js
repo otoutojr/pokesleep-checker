@@ -364,6 +364,67 @@
     </div>`;
   }
 
+  // the ideal ratio on a 0-100% scale with the rank bands, and its place among the combinations of its rank
+  function rankBar(ev) {
+    const d = ev.ideal;
+    const key = rankKey(d.rank);
+    let st = null;
+    try { st = PSE.idealStanding(ev.ctx, d.pct); } catch { st = null; }
+    const b = d.bounds; // lower bounds of 増田, SS, S, A, B, C
+    // 0-100%; some patterns rank above 100%, so the scale grows to show the top band
+    const max = Math.max(100, Math.ceil(Math.max(b[0] + 12, d.pct + 4) / 10) * 10);
+    const at = (v) => Math.max(0, Math.min(100, (v / max) * 100));
+    const ranks = ['D', 'C', 'B', 'A', 'S', 'SS', '増田'];
+    const lows = [0, b[5], b[4], b[3], b[2], b[1], b[0]];
+    const highs = lows.slice(1).concat([max]);
+    const cur = Math.max(0, ranks.indexOf(d.rank));
+    const x = at(d.pct);
+    const fmtB = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+    const n = (v) => v.toLocaleString('ja-JP');
+    const labels = ranks.map((r, i) => `<span class="rk-l${i === cur ? ' on' : ''}" data-g="${rankKey(r)}" style="left:${at((lows[i] + highs[i]) / 2).toFixed(2)}%">${r}</span>`).join('');
+    const gaps = lows.slice(1).map((v) => `<i class="rk-gap" style="left:${at(v).toFixed(2)}%"></i>`).join('');
+    const band = `<span class="rk-band" style="left:${at(lows[cur]).toFixed(2)}%;width:${(at(highs[cur]) - at(lows[cur])).toFixed(2)}%"></span>`;
+
+    // labels under the bar: the value at the end of the fill, 0% and 100% (the ideal), then the end of a longer scale and 50% where they fit
+    // (widths in % of the bar, estimated for a narrow phone)
+    const PX = 100 / 280;
+    const vTxt = fmtPct(d.pct);
+    const vw = vTxt.length * 7.8 * PX;
+    const spanOf = (p, w, al) => (al === 's' ? [p, p + w] : al === 'e' ? [p - w, p] : [p - w / 2, p + w / 2]);
+    const hit = (a, c) => !(a[1] < c[0] - 1.5 || a[0] > c[1] + 1.5);
+    const tick = (v) => {
+      const p = at(v), al = v === 0 ? 's' : p > 99.9 ? 'e' : '';
+      return { v, p, al, span: spanOf(p, String(v).length * 6.4 * PX + 7 * PX, al) };
+    };
+    const ends = [tick(0), tick(100)];
+    const prefs = x > 75 ? ['e', '', 's'] : x < 25 ? ['s', '', 'e'] : ['', 'e', 's'];
+    const fits = (al) => { const s = spanOf(x, vw, al); return s[0] >= 0 && s[1] <= 100 && ends.every((t) => !hit(s, t.span)); };
+    const vAlign = prefs.find(fits) ?? prefs[0];
+    const vSpan = spanOf(x, vw, vAlign);
+    const shown = ends.filter((t) => !hit(vSpan, t.span));
+    for (const v of (max > 100 ? [max, 50] : [50])) {
+      const t = tick(v);
+      if (!hit(vSpan, t.span) && shown.every((u) => !hit(u.span, t.span))) shown.push(t);
+    }
+    const ticks = shown.map((t) => `<span class="rk-t${t.al ? ' ' + t.al : ''}" style="left:${t.p.toFixed(2)}%">${t.v}%</span>`).join('');
+
+    const top = cur === ranks.length - 1;
+    const range = top ? `${fmtB(lows[cur])}%超` : cur === 0 ? `${fmtB(highs[cur])}%未満` : `${fmtB(lows[cur])}〜${fmtB(highs[cur])}%`;
+    const gap = highs[cur] - d.pct;
+    const next = top ? 'いちばん上のランクです' : `${ranks[cur + 1]}まで あと${gap < 0.05 ? '0.1%未満' : fmt1(gap) + '%'}`;
+    const place = st
+      ? `<p class="rk-place"><b data-g="${key}">${d.rank}</b>の${n(st.inRank)}通りの中で <b class="num">${n(st.placeInRank)}位</b></p>`
+      : '';
+    const aria = `理想個体比の目盛り（0%〜${max}%）。この個体は${vTxt}で${d.rank}（${range}）${st ? `。${d.rank}の${n(st.inRank)}通りの中で${n(st.placeInRank)}位` : ''}`;
+    return `<div class="rank-bar" data-g="${key}">
+        <div class="rk-labels" aria-hidden="true">${labels}</div>
+        <div class="rk-track" role="img" aria-label="${aria}">${band}<span class="rk-fill" style="width:${x.toFixed(2)}%"></span>${gaps}</div>
+        <div class="rk-scale" aria-hidden="true">${ticks}<span class="rk-v num${vAlign ? ' ' + vAlign : ''}" style="left:${x.toFixed(2)}%">${vTxt}</span></div>
+        ${place}
+        <p class="rk-next">${d.rank}は${range}・${next}</p>
+      </div>`;
+  }
+
   // a pre-evolution: which final form the evaluation uses
   function evoNote(ind) {
     const raw = state.ind.sp;
@@ -415,6 +476,7 @@
           <span class="subline">同じポケモンの${ev.n.toLocaleString('ja-JP')}通りの中では上位${fmtTop(ev.role.top)}（${BASIS[ind.sp.spec]}で比較）</span>
         </div>
       </div>
+      ${rankBar(ev)}
       ${roleBars(ind, ev)}
       <p class="summary">${esc(summaryText(ind, ev))}</p>
       <div class="lv-strip" id="lvStrip" role="group" aria-label="評価するレベル" style="grid-template-columns:repeat(${levels.length},minmax(0,1fr))">${stripHtml(ind, evs, levels)}</div>
