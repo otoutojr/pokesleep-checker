@@ -287,14 +287,21 @@
   async function readIngredientRow(canvas, labels) {
     const slots = ingredientSlots(canvas, labels || []);
     if (!slots.length) return [];
-    const eng = await getEngWorker();
     const out = [];
     for (const sl of slots) {
-      const { data } = await eng.recognize(badgeCrop(canvas, sl.box));
-      const m = String(data.text || '').replace(/\s/g, '').match(/(\d{1,2})/);
+      // the count by the badge font's glyphs (every count x1-x20 scored); general OCR only when no text was found
+      let badge = null;
+      try { badge = window.IngIcons && window.IngIcons.readCount ? window.IngIcons.readCount(canvas, sl.box) : null; } catch (e) { badge = null; }
+      let count = badge ? badge.count : null;
+      if (!badge) {
+        const eng = await getEngWorker();
+        const { data } = await eng.recognize(badgeCrop(canvas, sl.box));
+        const m = String(data.text || '').replace(/\s/g, '').match(/(\d{1,2})/);
+        count = m && +m[1] >= 1 && +m[1] <= 20 ? +m[1] : null;
+      }
       let icon = null;
       try { icon = window.IngIcons ? window.IngIcons.score(canvas, sl.box) : null; } catch (e) { icon = null; }
-      out.push({ unlock: [1, 30, 60][sl.idx], count: m && +m[1] >= 1 && +m[1] <= 20 ? +m[1] : null, same: {}, box: sl.box, icon });
+      out.push({ unlock: [1, 30, 60][sl.idx], count, countScores: badge ? badge.scores : null, same: {}, box: sl.box, icon });
     }
     // same sprite or not, only between icons drawn the same way (a locked icon is faded)
     for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) {

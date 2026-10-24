@@ -2,7 +2,8 @@
  * Each ingredient is kept as an 8x8 layout of mean colours (premultiplied) and coverage, measured from
  * the game's icons. A slot's icon is that sprite over the slot's pale circle: as is when the slot is
  * unlocked, faded to about 40% when it is still locked. Every ingredient is fitted (position, size,
- * fade) and the fit errors tell them apart. Exposes window.IngIcons = { findRow, score }. */
+ * fade) and the fit errors tell them apart. The count on each badge ("x4") is read by matching the badge
+ * font's glyphs. Exposes window.IngIcons = { findRow, score, readCount }. */
 (function () {
   'use strict';
   const N = 8;
@@ -23,6 +24,8 @@
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) DIST[i * N + j] = Math.hypot((i + 0.5) / N - 0.5, (j + 0.5) / N - 0.5);
 
   const isGolden = (d, i) => d[i] > 210 && d[i + 1] > 140 && d[i + 1] < 215 && d[i + 2] < 120 && d[i] - d[i + 2] > 120;
+  // small or compressed screenshots wash the thin golden border out
+  const isGoldenLoose = (d, i) => d[i] > 195 && d[i + 1] > 120 && d[i + 1] < 228 && d[i + 2] < 175 && d[i] - d[i + 2] > 70;
 
   // Fit errors (lower = closer) of every ingredient for the icon above a count badge.
   // box: the white inside of the badge, in canvas pixels. Returns { faded, err: { name: error } }.
@@ -139,13 +142,13 @@
   }
 
   // A count badge is a white pill with a golden border and a little dark text inside.
-  function looksLikeBadge(d, W, box) {
+  function looksLikeBadge(d, W, box, loose) {
     let white = 0, dark = 0, n = 0;
     for (let y = box.y0; y <= box.y1; y++) {
       for (let x = box.x0; x <= box.x1; x++) {
         const i = (y * W + x) * 4;
         const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-        if (lum > 235) white++; else if (lum < 150) dark++;
+        if (lum > (loose ? 225 : 235)) white++; else if (lum < (loose ? 175 : 150)) dark++;
         n++;
       }
     }
@@ -154,8 +157,9 @@
 
   // The count badges of the ingredient row (Lv1, Lv30, Lv60 slots at about 54%, 71% and 87% of the
   // width), found without any text: [{ slot: 0..2, box }], left to right; [] when not on screen.
-  function findRow(canvas) {
+  function findRow(canvas, loose) {
     const W = canvas.width, H = canvas.height;
+    const golden = loose ? isGoldenLoose : isGolden;
     const yMax = Math.min(H, Math.round(Math.max(0.55 * H, 1.3 * W)));
     const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, yMax).data;
     const minRun = 0.026 * W, maxRun = 0.065 * W;
@@ -164,7 +168,7 @@
       let a = -1, b = -1;
       const runs = [];
       for (let x = 0; x < W; x++) {
-        if (isGolden(d, (y * W + x) * 4)) { if (a < 0) a = x; b = x; }
+        if (golden(d, (y * W + x) * 4)) { if (a < 0) a = x; b = x; }
         else if (a >= 0 && x - b > 3) { if (b - a >= minRun && b - a <= maxRun) runs.push([a, b]); a = -1; }
       }
       if (a >= 0 && b - a >= minRun && b - a <= maxRun) runs.push([a, b]);
@@ -183,7 +187,7 @@
         if (gap < 0.018 * W || gap > 0.045 * W) continue;
         if (Math.abs(t.a - u.a) > 0.02 * W || Math.abs(t.b - u.b) > 0.02 * W) continue;
         const box = { x0: Math.min(t.a, u.a), x1: Math.max(t.b, u.b), y0: t.y1 + 1, y1: u.y0 - 1 };
-        if (looksLikeBadge(d, W, box) && !pills.some((p) => Math.abs(p.x0 - box.x0) < 4 && Math.abs(p.y0 - box.y0) < 4)) pills.push(box);
+        if (looksLikeBadge(d, W, box, loose) && !pills.some((p) => Math.abs(p.x0 - box.x0) < 4 && Math.abs(p.y0 - box.y0) < 4)) pills.push(box);
       }
     }
     const SLOT_X = [0.541, 0.709, 0.873];
@@ -201,8 +205,92 @@
       const good = row.length >= 2 || (row.length === 1 && row[0].slot > 0);
       if (good && row.length > bestRow.length) bestRow = row;
     }
+    if (!bestRow.length && !loose) return findRow(canvas, true);
     return bestRow.sort((a, b) => a.slot - b.slot);
   }
 
-  window.IngIcons = { findRow, score, names: NAMES };
+
+  // Count badge glyphs ("x" and 0-9) as 4-bit ink bitmaps at a 24px digit height, and the glyph positions of
+  // "x1" ... "x20", rendered from Montserrat Bold (SIL Open Font License 1.1), which matches the badge font.
+  const BADGE_GLYPHS = {"x":[19,17,6,"SqqqEAAAOqqoAL//+QAAHf//MAHv//UACv//YAAE///iB///oAAACP//w///0QAAAAv/////4wAAAAAe////9gAAAAAAT///+QAAAAAAAN///xAAAAAAAD////oAAAAAAB3////2AAAAAAr/////8wAAAAf//7b//9EAAAP//+EK//+gAAHf//QAHf//cAC///gAAE///zCP//sAAACP//0Q"],"0":[19,24,0,"AAAAAAEAAAAAAAAAKN//2TAAAAAAn/////+RAAABv///////sQAAn////////6AAT///xTXP//9AC///sAAAv//8Av//8gAAAv//8m//+wAAAAv//2n//4AAAAB///m///YAAAAF//+7//9QAAAAT//8z//1AAAABP//y///UAAAAF///J//9wAAAAb//6f//6AAAACv//c///4QAAAe//9A3//4AAAH///QBv//+BAX///3AAz////f///9AAAu///////+IAAALf/////9MAAAAAff///XEAAAAAAAJFQgAAAA"],"1":[10,22,1,"i7u7u7bP////+c/////5z/////lFVc//+QAAf//5AAB///kAAH//+QAAf//5AAB///kAAH//+QAAf//5AAB///kAAH//+QAAf//5AAB///kAAH//+QAAf//5AAB///kAAH//+QAAf//5AAB///k="],"2":[18,23,0,"AAAAABAAAAAAAAFq3//qYQAAAF7//////UAACf////////UAj/////////4QTf/8YyS///9wAY9wAAAL//+gAAIAAAAG//+gAAAAAAAH//+QAAAAAAAL//9gAAAAAABv//4QAAAAAAT///cAAAAAAF///6AAAAAABf//+wAAAAAAb///sQAAAAAH///6AAAAAACP//+QAAAAAAn///gAAAAAAJ///5IiIiIhCv/////////3D//////////3D//////////3D//////////3"],"3":[18,23,1,"Cru7u7u7u7swDv////////9ADv////////9ADv////////8wBVVVVVb///YAAAAAAAv//4AAAAAAAJ//+gAAAAAACP//sAAAAAAAb//9EAAAAAAC////lAAAAAAC/////7EAAAAC//////wQAAACqrz///+AAAAAAAAb///gAAAAAAAB///yAAAAAAAA3//zA3AAAAAC///xC/1zAABd///QT///7d////9gv/////////sAXf///////6EAAFrv////tAAAAAACRVUwAAAA"],"4":[22,22,1,"AAAAAAAau7sgAAAAAAAAAL//+QAAAAAAAAAH///RAAAAAAAAAD///zAAAAAAAAAB3//2AAAAAAAAAAr//6AAAAAAAAAAb//9EAAAAAAAAAP///QAAAAAAAAAHf//gAAAAAAAAACv//wAK7u2AAAABv//4gA///gAAAA+//9QAD//+AAAAd//+QAAP//4AAAJ///7qqrf//+qoR/////////////xH/////////////Ef////////////8Qd3d3d3d8///3dxAAAAAAAAX//4AAAAAAAAAABf//gAAAAAAAAAAF//+AAAAAAAAAAAX//4AAA="],"5":[18,23,1,"AAq7u7u7u7swAB////////9AAD////////9AAE////////9AAF//+FVVVVUQAH//8gAAAAAAAI//8QAAAAAAAJ//4AAAAAAAAL//+IdlEAAAAM//////+0AAAN////////kAAP////////+AAIiIiJrf///hAAAAAAAF///2AAAAAAAAr//4AAAAAAAAj//4AIIAAAAAz//3Bv6UEAA6///zDf///t7///+wb/////////4gK////////9MAADjP////xwAAAAABNFVBAAAA"],"6":[19,24,0,"AAAAAAABAAAAAAAAAovv/9phAAAAKv//////4gAAPv///////AAAPv///////0AADf//+kESSbAAB///5AAAAAAAAO//9gAAAAAAAE///QAAAAAAAAf//4AViYYQAACv//aO////ogAL/////////+MAz//////////hC////6Q0n///gK///4AAAG///gj//+EAAADf//Ff//0AAAAM//8R7//xAAAA7//wCf//oAAAn//7AB7//9hnz///UABP////////kAAATv//////gAAAABff///qMAAAAAAAJFUxAAAA"],"7":[19,22,1,"K7u7u7u7u7u7I///////////8z///////////zP///////////I///pmZmb///wD//9AAAAe//9QP//0AAAH///QA+7uQAAA3//3AAAAAAAAX//+EAAAAAAADP//kAAAAAAABP//8gAAAAAAAK//+wAAAAAAAC///0AAAAAAAAj//9AAAAAAAAHv//YAAAAAAAB///4QAAAAAAAN//+AAAAAAAAF///yAAAAAAAAz//6AAAAAAAAP///MAAAAAAACv//wAAAAAAAAv//9QAAAAA="],"8":[19,24,0,"AAAAAAAAAAAAAAACe+/+2UAAAAAI///////DAAAL////////5AAH///+us///+EA3//6EABP//9QH///EAAAn//4Af//4AAAB///gA7//zAAAL//9gCP//1RA6///hABz////////1AAAf///////2AAAs////////9gAd///6h57///UH///SAAAJ///gz//1AAAADf//Pf//MAAAAL//9d//9QAAAA3//0n//9EAAAf///E////pZnz///oAf/////////0QAH7///////sQAAAY3////qQAAAAAACNVQwAAAA"],"9":[19,24,0,"AAAAAAAAAAAAAAABfO/+xxAAAAAG7/////+AAAAI////////sAAF///+u9///5AA3//5EABe//8wP//8AAAAb//6Bf//gAAAAv//8F//+QAAAC///0P//9EAAAj///YN///DABj///9wf////t/////4AK//////////gACP////+6//9wAAJ7zclAv//0AAAAAAAADv//EAAAAAAABv//wAAAAAAAA+//9gAAkwAAF+///AAAX/7Lz////jAADf///////kAABf///////DAAAAbP////tQAAAAAAE1VTEAAAAA"]};
+  const BADGE_LAYOUT = {"1":[0.0,18.44],"2":[0.0,18.44],"3":[0.0,17.44],"4":[0.0,18.44],"5":[0.0,18.44],"6":[0.0,18.44],"7":[0.0,18.44],"8":[0.0,18.44],"9":[0.0,18.44],"10":[0.0,18.44,31.02],"11":[0.0,18.44,31.02],"12":[0.0,18.44,31.02],"13":[0.0,18.44,30.02],"14":[0.0,18.44,31.02],"15":[0.0,18.44,31.02],"16":[0.0,18.44,31.02],"17":[0.0,18.44,31.02],"18":[0.0,18.44,31.02],"19":[0.0,18.44,31.02],"20":[0.0,18.44,36.98]};
+  // ---- count badges ("x4"): matched against the badge font's own glyphs ----
+  // Every count from x1 to x20 is drawn from the glyph bitmaps at the size of the text on the badge and
+  // compared with it; the closest wins. Unlike general OCR this never drops the thin "1" of x1 / x12.
+  const GLYPH = {};
+  for (const [ch, [w, h, top, b64]] of Object.entries(BADGE_GLYPHS)) {
+    const raw = atob(b64);
+    const a = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) { const v = raw.charCodeAt(i >> 1); a[i] = ((i & 1) ? (v & 15) : (v >> 4)) / 15; }
+    GLYPH[ch] = { w, h, top, a };
+  }
+  const glyphAt = (g, u, v) => {
+    // bilinear sample of a glyph bitmap (0 outside)
+    if (u <= -1 || v <= -1 || u >= g.w || v >= g.h) return 0;
+    const x0 = Math.floor(u), y0 = Math.floor(v), fx = u - x0, fy = v - y0;
+    const p = (x, y) => (x < 0 || y < 0 || x >= g.w || y >= g.h ? 0 : g.a[y * g.w + x]);
+    return (p(x0, y0) * (1 - fx) + p(x0 + 1, y0) * fx) * (1 - fy) + (p(x0, y0 + 1) * (1 - fx) + p(x0 + 1, y0 + 1) * fx) * fy;
+  };
+  // returns { count, scores: { n: error } } for the text inside a badge's white box, or null
+  function readBadge(canvas, box) {
+    const W = canvas.width, H = canvas.height;
+    const x0 = Math.max(0, Math.floor(box.x0) + 1), x1 = Math.min(W, Math.ceil(box.x1));
+    const y0 = Math.max(0, Math.floor(box.y0)), y1 = Math.min(H, Math.ceil(box.y1) + 1);
+    const w = x1 - x0, h = y1 - y0;
+    if (w < 8 || h < 8) return null;
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, w, h).data;
+    const ink = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const lum = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+      ink[i] = Math.max(0, Math.min(1, (180 - lum) / 80)); // the brown text; the golden border stays out
+    }
+    // the text's extent: rows and columns holding ink
+    const colSum = new Float32Array(w), rowSum = new Float32Array(h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { colSum[x] += ink[y * w + x]; rowSum[y] += ink[y * w + x]; }
+    let xa = -1, xb = -1, ya = -1, yb = -1;
+    for (let x = 0; x < w; x++) if (colSum[x] >= 0.8) { if (xa < 0) xa = x; xb = x; }
+    for (let y = 0; y < h; y++) if (rowSum[y] >= 0.8) { if (ya < 0) ya = y; yb = y; }
+    if (xa < 0 || ya < 0) return null;
+    const th = yb - ya + 1, tw = xb - xa + 1;
+    if (th < 6 || tw < 6) return null;
+    const s = th / 24; // template digits are 24 px tall
+    const m = 2;
+    const scores = {};
+    for (let n = 1; n <= 20; n++) {
+      const str = 'x' + n;
+      const pos = BADGE_LAYOUT[n];
+      const last = GLYPH[str[str.length - 1]];
+      const natural = (pos[pos.length - 1] + last.w) * s;
+      const fit = Math.max(0.85, Math.min(1.15, tw / natural));
+      let best = Infinity;
+      for (const sx of [fit * 0.97, fit, fit * 1.03]) {
+        for (const dx of [-1, 0, 1]) {
+          let err = 0, cnt = 0;
+          // compared from just before the first digit: the "x" is the same in every candidate
+          const from = Math.max(xa - m, Math.floor(xa + dx + pos[1] * s * sx) - m);
+          for (let y = ya - m; y <= yb + m; y++) {
+            for (let x = from; x <= xb + m; x++) {
+              const o = x >= 0 && y >= 0 && x < w && y < h ? ink[y * w + x] : 0;
+              let r = 0;
+              for (let i = 0; i < str.length; i++) {
+                const g = GLYPH[str[i]];
+                const u = (x - xa - dx - pos[i] * s * sx) / (s * sx), v = (y - ya - g.top * s) / s;
+                if (u > -1 && u < g.w && v > -1 && v < g.h) { const val = glyphAt(g, u, v); if (val > r) r = val; }
+              }
+              err += (o - r) * (o - r);
+              cnt++;
+            }
+          }
+          const e = err / cnt;
+          if (e < best) best = e;
+        }
+      }
+      scores[n] = best + 0.02 * Math.abs(Math.log(tw / natural));
+    }
+    const order = Object.keys(scores).map(Number).sort((a, b) => scores[a] - scores[b]);
+    const [b1, b2] = order;
+    return { count: scores[b1] < 0.9 * scores[b2] ? b1 : null, best: b1, scores };
+  }
+
+  window.IngIcons = { findRow, score, readCount: readBadge, names: NAMES };
 })();

@@ -35,3 +35,7 @@ From the npm package @tesseract.js-data/jpn 1.0.0 (4.0.0_best_int), derived from
 ## Fonts
 
 Zen Maru Gothic and Zen Kaku Gothic New are loaded from Google Fonts (SIL Open Font License 1.1).
+
+The count-badge digit bitmaps in `assets/ing-icons.js` (x and 0-9, 4-bit, 24 px) were rendered from Montserrat Bold
+(https://github.com/JulietaUla/Montserrat — SIL Open Font License 1.1, Copyright 2011 The Montserrat Project Authors);
+the font itself is not included.

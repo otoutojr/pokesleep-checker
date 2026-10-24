@@ -18,7 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=20261024-6">
+<link rel="stylesheet" href="assets/app.css?v=20261024-7">
 </head>
 <body>
 <header class="band">
@@ -137,7 +137,7 @@
         <li>ゆめのかけらボーナス・リサーチEXPボーナスは、理想個体比には入りません（「サポート」と表示します）。</li>
         <li>SP・おてつだい時間・最大所持数の計算式とポケモンのデータは <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT License）、SPの式は <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX</a> の調査にもとづきます。画面のSPと計算が一致すれば、読み取りは正しいと判断できます。</li>
         <li>スクショの文字はiPhoneの中で読み取ります（Tesseract.js）。画像はどこにも送られず、保存もされません。読み取った個体の履歴は、このiPhoneのアプリの中にだけ保存されます。</li>
-        <li>読み間違いは、画面のSP・おてつだい時間と計算が一致するかで確かめて、1か所だけのズレなら自動で直します。ニックネームを付けたポケモンも、SPとおてつだい時間から種類を割り出します。食材は、アイコンの色の並びを19種類の食材アイコンと照らし合わせて見分け（鍵のかかった薄い表示にも対応）、「×4」などの個数と、解放済みの枠はSPでも確かめます。アイコンが名前の欄に隠れて見えない枠は、個数とSPから割り出します。</li>
+        <li>読み間違いは、画面のSP・おてつだい時間と計算が一致するかで確かめて、1か所だけのズレなら自動で直します。ニックネームを付けたポケモンも、SPとおてつだい時間から種類を割り出します。食材は、アイコンの色の並びを19種類の食材アイコンと照らし合わせて見分け（鍵のかかった薄い表示にも対応）、「×4」などの個数と、解放済みの枠はSPでも確かめます。個数は、バッジの数字の形を×1〜×20と1つずつ照らし合わせて読みます（×10などの2けたも）。アイコンと個数が食い違ったときは、その枠をオレンジ色にします。アイコンが名前の欄に隠れて見えない枠は、個数とSPから割り出します。前に読んだのと別の個体のスクショを選ぶと、前のスクショは自動で外して、新しい1枚だけで読みます。</li>
       </ul>
       <div class="field">
         <span class="lab">進化前のポケモン</span>
@@ -159,13 +159,13 @@
   <p class="foot">データ更新: 2026年10月（ゲーム内レベル上限 Lv70、サブスキル解放 Lv10/25/50/70/80）</p>
   <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／ランクの基準: <a href="https://www.pokemonsleepdaifuku.com/checker/" target="_blank" rel="noopener">だいふくさんの個体値チェッカー</a>の公開情報／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）</p>
 </main>
-<script src="assets/data.js?v=20261024-6"></script>
-<script src="assets/nito.js?v=20261024-6"></script>
-<script src="assets/engine.js?v=20261024-6"></script>
-<script src="vendor/tesseract/tesseract.min.js?v=20261024-6"></script>
-<script src="assets/ocr-parse.js?v=20261024-6"></script>
-<script src="assets/ing-icons.js?v=20261024-6"></script>
-<script src="assets/ocr.js?v=20261024-6"></script>
-<script src="assets/app.js?v=20261024-6"></script>
+<script src="assets/data.js?v=20261024-7"></script>
+<script src="assets/nito.js?v=20261024-7"></script>
+<script src="assets/engine.js?v=20261024-7"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=20261024-7"></script>
+<script src="assets/ocr-parse.js?v=20261024-7"></script>
+<script src="assets/ing-icons.js?v=20261024-7"></script>
+<script src="assets/ocr.js?v=20261024-7"></script>
+<script src="assets/app.js?v=20261024-7"></script>
 </body>
 </html>

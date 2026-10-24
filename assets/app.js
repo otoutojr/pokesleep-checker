@@ -1102,6 +1102,22 @@
     return r[0].name;
   }
 
+  // The count on a badge among the counts this slot can have: { n, strong } or null. A badge read by the badge
+  // font's glyphs scores every count, so the slot's own counts are compared directly; "strong" when one of them
+  // fits clearly and well.
+  function countPick(c, options) {
+    if (!c) return null;
+    const counts = [...new Set(options.map((o) => o.count))];
+    if (c.countScores) {
+      const r = counts.map((n) => ({ n, e: c.countScores[n] })).filter((x) => x.e != null).sort((a, b) => a.e - b.e);
+      if (!r.length || r[0].e > 0.18) return null;
+      if (r.length === 1) return { n: r[0].n, strong: false };
+      if (r[0].e >= 0.8 * r[1].e) return null;
+      return { n: r[0].n, strong: r[0].e <= 0.12 && r[0].e < 0.6 * r[1].e };
+    }
+    return c.count && counts.includes(c.count) ? { n: c.count, strong: false } : null;
+  }
+
   // Ingredients from the badges: the icon itself, the "x4" count, and identical icons across slots
   // (or different ones) carrying a known slot's ingredient over (or ruling it out).
   function applyCounts(sp, slots, flags, counts) {
@@ -1115,13 +1131,15 @@
     [0, 1, 2].forEach((i) => {
       const c = byU[U[i]];
       if (!c) return;
-      if (c.count) { const f = cand[i].filter((o) => o.count === c.count); if (f.length) cand[i] = f; }
+      const cn = countPick(c, all[i]);
+      if (cn) { const f = cand[i].filter((o) => o.count === cn.n); if (f.length) cand[i] = f; }
       const pick = iconPick(c, cand[i]);
       if (pick) cand[i] = cand[i].filter((o) => o.name === pick);
-      // an icon that clearly shows an ingredient the count rules out: the count was likely misread
+      // an icon that clearly shows an ingredient the count rules out: one of the two is wrong. A clearly read
+      // count stands; otherwise the icon does. Either way the slot is marked for checking.
       const other = iconPick(c, all[i], 3);
       if (other && !cand[i].some((o) => o.name === other)) {
-        cand[i] = all[i].filter((o) => o.name === other);
+        if (!(cn && cn.strong)) cand[i] = all[i].filter((o) => o.name === other);
         unsure[i] = true;
       }
     });
@@ -1224,7 +1242,8 @@
       [0, 1, 2].forEach((i) => {
         const c = byU[[1, 30, 60][i]];
         if (!c || !x.slots[i]) return;
-        if (c.count && x.slots[i].count !== c.count) cost += Math.log(4);
+        const cn = countPick(c, PSE.slotOptions(x.sp, i));
+        if (cn && x.slots[i].count !== cn.n) cost += Math.log(cn.strong ? 16 : 4);
         const r = iconRank(c, PSE.slotOptions(x.sp, i));
         if (!r.length || r[0].err > ICON_OK) return;
         const e = r.find((y) => y.name === x.slots[i].name);
@@ -1356,13 +1375,31 @@
     const unsure = Object.keys(flags).filter((k) => !/^ing/.test(k) || ind.level >= [1, 30, 60][+k.slice(3)]).length;
     const spNote = ind.spShown ? (spMatches(ind) ? 'SPも計算と一致しました。' : 'SPが計算と合いません。下の「読み取りチェック」を見てください。') : 'SPが読めなかったので、照合はしていません。';
     const candNote = state.speciesCands ? `ポケモンは ${state.speciesCands.map((x) => x.ja).join('・')} のどれかで、数値だけでは区別できません。違うときは選び直してください。` : '';
+    const note = state.readNote || '';
+    state.readNote = '';
     setStatus(unsure
-      ? `読み取りました。${spNote}${candNote}確認してほしい項目が${unsure}つあります（「読み取り結果を直す」のオレンジ色の欄）。`
-      : `読み取りました。${spNote}`, 'ok');
+      ? `読み取りました。${spNote}${candNote}確認してほしい項目が${unsure}つあります（「読み取り結果を直す」のオレンジ色の欄）。${note}`
+      : `読み取りました。${spNote}${note}`, 'ok');
     fillEditor();
     state.historyT = ind.sp.supported ? saveHistory(ind) : null;
     renderAll();
     $('cardVerdict').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  // Two screenshots belong together (top and bottom of one Pokémon's screen) unless what both show disagrees:
+  // the SP, the level, the species, the nature or a sub skill read on both.
+  function sameIndividual(a, b) {
+    if (!a || !b) return true;
+    const sa = [a.sp, a.spAlt].filter((v) => v != null), sb = [b.sp, b.spAlt].filter((v) => v != null);
+    if (sa.length && sb.length && !sa.some((v) => sb.includes(v))) return false;
+    if (a.level != null && b.level != null && a.level !== b.level) return false;
+    if (a.species && b.species && a.species !== b.species) return false;
+    if (a.nature && b.nature && a.nature !== b.nature) return false;
+    for (let i = 0; i < 5; i++) {
+      const x = (a.subSkills || [])[i], y = (b.subSkills || [])[i];
+      if (x && y && x.name && y.name && !x.unsure && !y.unsure && x.name !== y.name) return false;
+    }
+    return true;
   }
 
   let reading = false, readAgain = false;
@@ -1374,10 +1411,11 @@
     const paint = () => setStatus(`${stage}${pct != null ? ` ${Math.round(pct * 100)}%` : ''}`, '', true);
     paint();
     try {
-      const results = [];
-      for (let i = 0; i < state.files.length; i++) {
-        const which = state.files.length > 1 ? `${i + 1}枚目を` : '';
-        results.push(await OCR.read(state.files[i].file, {
+      // each screenshot is read once; the result is kept with it
+      const todo = state.files.filter((x) => !x.result);
+      for (let i = 0; i < todo.length; i++) {
+        const which = todo.length > 1 ? `${i + 1}枚目を` : '';
+        todo[i].result = await OCR.read(todo[i].file, {
           vocab: OCR_VOCAB,
           onProgress: (m) => {
             const st = String(m.status || '');
@@ -1391,9 +1429,20 @@
             else return;
             paint();
           },
-        }));
+        });
       }
-      applyReading(OCRParse.merge(results));
+      // only the screenshots of the newest one's Pokémon are read together; older ones of another
+      // individual are put away (picking a new Pokémon's screenshot without removing the last one)
+      const last = state.files[state.files.length - 1];
+      const keep = state.files.filter((x) => x === last || sameIndividual(x.result, last.result));
+      state.readNote = '';
+      if (keep.length < state.files.length) {
+        state.files.filter((x) => !keep.includes(x)).forEach((x) => URL.revokeObjectURL(x.url));
+        state.files = keep;
+        renderThumbs();
+        state.readNote = '前のスクショは別の個体だったので外しました。';
+      }
+      applyReading(OCRParse.merge(keep.map((x) => x.result).reverse()));
     } catch (e) {
       console.error(e);
       setStatus('読み取りに失敗しました。通信状態を確かめてもう一度試すか、下の「読み取り結果を直す・手入力する」で入力してください。 <button type="button" class="btn btn-night btn-small" id="retryRead">もう一度読み取る</button>', 'error');
