@@ -296,16 +296,16 @@
     }
     $('cardSpecimen').innerHTML = `
       <div class="specimen">
-        <div style="display:grid;gap:4px;min-width:0">
+        <div style="display:grid;gap:8px;min-width:0">
           <h2 id="spName">${esc(sp.ja)}<span class="lv num">Lv.${ind.level}</span></h2>
           ${nick}
+          <div class="chips">
+            <span class="chip spec-${sp.spec}">${SPEC_TYPE[sp.spec]}</span>
+            <span class="chip">${esc(PSE.TYPE_JA[sp.type] || sp.type)}・${esc(PSE.BERRY_JA[sp.type] || 'きのみ')}</span>
+            <span class="chip">${esc(skillJa)} Lv.${ind.skillLevelShown || 1}</span>
+          </div>
         </div>
         ${spBox}
-        <div class="chips">
-          <span class="chip spec-${sp.spec}">${SPEC_TYPE[sp.spec]}</span>
-          <span class="chip">${esc(PSE.TYPE_JA[sp.type] || sp.type)}・${esc(PSE.BERRY_JA[sp.type] || 'きのみ')}</span>
-          <span class="chip">${esc(skillJa)} Lv.${ind.skillLevelShown || 1}</span>
-        </div>
       </div>`;
   }
 
@@ -399,47 +399,26 @@
     }).join('');
   }
 
-  // Where the ratio sits among the rank bands of this Pokémon's group (the published thresholds):
-  // one equal step per rank, the marker placed inside its own band.
-  function rankRuler(d, key) {
-    const b = d.bounds; // 増田, SS, S, A, B, C
-    const ranks = [['D', 'D'], ['C', 'C'], ['B', 'B'], ['A', 'A'], ['S', 'S'], ['SS', 'SS'], ['X', '増田']];
-    const edges = [0, b[5], b[4], b[3], b[2], b[1], b[0], b[0] + 15];
-    const n = ranks.length, w = 100 / n;
-    const i = Math.max(0, ranks.findIndex(([k]) => k === key));
-    const frac = Math.max(0.04, Math.min(0.96, (d.pct - edges[i]) / (edges[i + 1] - edges[i])));
-    const x = (i + frac) * w;
-    const fmtB = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)) + '%';
-    const segs = ranks.map(([k, lab], j) => `<span class="rr-seg${j === i ? ' on' : ''}" data-g="${k}" style="left:${(j * w).toFixed(3)}%;width:${w.toFixed(3)}%"><b>${lab}</b></span>`).join('');
-    const ticks = [i > 0 ? [i * w, edges[i]] : null, i < n - 1 ? [(i + 1) * w, edges[i + 1]] : null]
-      .filter(Boolean).map(([at, v]) => `<span class="rr-tick" style="left:${at.toFixed(3)}%">${fmtB(v)}</span>`).join('');
-    const next = i < n - 1
-      ? `${ranks[i + 1][1]}まで あと${(edges[i + 1] - d.pct).toFixed(1)}%`
-      : 'いちばん上のランクです';
-    const label = ranks.map(([, lab], j) => (j === 0 ? `${lab} ${fmtB(edges[1])}未満` : j === n - 1 ? `${lab} ${fmtB(edges[j])}超` : `${lab} ${fmtB(edges[j])}から`)).join('、');
-    return `<div class="rank-ruler" role="img" aria-label="ランクの目安: ${label}。この個体は${fmtPct(d.pct)}で${d.rank}">
-        <div class="rr-track">${segs}<span class="rr-mark" style="--x:${x.toFixed(2)}%"><span class="rr-val num">${fmtPct(d.pct)}</span></span></div>
-        <div class="rr-ticks">${ticks}</div>
-      </div>
-      <p class="rr-next">${next}</p>`;
-  }
-
   function renderVerdict(ind, ev, evs, levels) {
     const d = ev.ideal;
     const key = rankKey(d.rank);
-    const pctTxt = fmtPct(d.pct);
+    const fill = Math.max(2, Math.min(100, Math.round(d.pct)));
+    const names = ['増田', 'SS', 'S', 'A', 'B', 'C'];
+    const scale = d.bounds.map((v, i) => `${names[i]} ${Number.isInteger(v) ? v : v.toFixed(1)}%${i === 0 ? '超' : '〜'}`).join('・') + '・D それ未満';
     $('cardVerdict').innerHTML = `
+      ${evoNote(ind)}
       <div class="verdict">
-        <div class="rank-badge" data-g="${key}"><span class="${d.rank.length > 1 ? 'two' : ''}">${d.rank}</span></div>
+        <div class="medal" data-g="${key}" style="--fill:${fill}" aria-hidden="true"><span class="${d.rank.length > 1 ? 'two' : ''}">${d.rank}</span></div>
         <div class="verdict-text">
-          <p class="ratio"><span class="ratio-k">理想個体の</span><span class="ratio-v num">${pctTxt.slice(0, -1)}</span><span class="ratio-u">%</span></p>
-          <p class="verdict-word"><b data-g="${key}">${RANK_WORD[d.rank]}</b>${esc(ind.sp.ja)}（${d.tribeNo}${esc(d.tribeJa)}）をLv${ev.L}で評価${ev.L !== ind.level ? `（いまLv${ind.level}）` : ''}</p>
+          <span class="eyebrow">${esc(ind.sp.ja)}・${d.tribeNo}${esc(d.tribeJa)}・Lv${ev.L}のとき${ev.L !== ind.level ? `（いまLv${ind.level}）` : ''}</span>
+          <span class="big">理想個体の ${fmtPct(d.pct)}<small>${RANK_WORD[d.rank]}</small></span>
+          <span class="subline">同じポケモンの${ev.n.toLocaleString('ja-JP')}通りの中では上位${fmtTop(ev.role.top)}（${BASIS[ind.sp.spec]}で比較）</span>
         </div>
       </div>
-      ${rankRuler(d, key)}
+      ${roleBars(ind, ev)}
+      <p class="summary">${esc(summaryText(ind, ev))}</p>
       <div class="lv-strip" id="lvStrip" role="group" aria-label="評価するレベル" style="grid-template-columns:repeat(${levels.length},minmax(0,1fr))">${stripHtml(ind, evs, levels)}</div>
-      ${evoNote(ind)}
-      <p class="hero-note">ランクの基準: だいふくさんの個体値チェッカー（${esc(d.tribeJa)}・Lv${d.table}の表）</p>`;
+      <p class="note">ランクの目安（だいふくさんの個体値チェッカーの${esc(d.tribeJa)}・Lv${d.table}基準）: ${scale}</p>`;
   }
 
   // ---------- render: why ----------
@@ -592,10 +571,7 @@
     const refs = ev.ideal.refs;
     const refText = (r) => `${esc(r.nature.ja)}${r.subs.length ? '＋' + r.subs.map((x) => esc(x.ja)).join('・') : ''}`;
     $('cardWhy').innerHTML = `
-      <h2 class="card-title">評価の内訳（Lv${L}）</h2>
-      <p class="summary">${esc(summaryText(ind, ev))}</p>
-      ${roleBars(ind, ev)}
-      <p class="note">同じポケモンの${ev.n.toLocaleString('ja-JP')}通りの組み合わせの中では、${BASIS[ind.sp.spec]}で上位${fmtTop(ev.role.top)}です。下の「理想個体比 +○pt」は、そのせいかく・サブスキルがあるときとないときの差です。</p>
+      <h2 class="card-title">評価の内訳（Lv${L}・理想個体比で何pt変わるか）</h2>
       <div class="rows">${natureRow}</div>
       <h3 class="card-title">サブスキル（あり・なしの差）</h3>
       <div class="rows">${subRows}</div>
@@ -948,7 +924,7 @@
       const subs = (o.s || []).filter(Boolean).map((k) => PSE.SUB_BY_K[k]?.ja).filter(Boolean).slice(0, 3).join('・');
       return `<div class="h-item">
         <button type="button" class="h-open" data-h="${i}"><b>${esc(name)}</b> Lv.${o.lv}・${esc(o.n)}<span>${d}｜${esc(subs)}</span></button>
-        <span class="h-grade${String(o.g || '').length > 1 ? ' two' : ''}" data-g="${o.g ? rankKey(o.g) : ''}" title="Lv60のランク${o.p != null && o.gs && o.gs.startsWith('m5') ? `（理想個体の${o.p}%）` : ''}">${esc(o.g || '')}</span>
+        <span class="h-grade${String(o.g || '').length > 1 ? ' two' : ''}" style="color:var(--g${rankKey(o.g)})" title="Lv60のランク${o.p != null && o.gs && o.gs.startsWith('m5') ? `（理想個体の${o.p}%）` : ''}">${esc(o.g || '')}</span>
         <button type="button" class="h-del" data-hdel="${i}" aria-label="${esc(name)}を履歴から消す">×</button>
       </div>`;
     }).join('');
@@ -958,7 +934,7 @@
   function setStatus(html, tone, spinning) {
     const el = $('status');
     el.dataset.tone = tone || '';
-    el.innerHTML = html ? (spinning ? '<span class="spinner" aria-hidden="true"></span>' : '') + `<span class="status-text">${html}</span>` : '';
+    el.innerHTML = (spinning ? '<span class="spinner" aria-hidden="true"></span>' : '') + html;
   }
 
   const splitSkill = (ja) => String(ja || '').split(/\s*[()（）]\s*/).filter(Boolean);
@@ -1324,7 +1300,7 @@
     fillEditor();
     state.historyT = ind.sp.supported ? saveHistory(ind) : null;
     renderAll();
-    $('hero').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    $('cardVerdict').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }
 
   let reading = false, readAgain = false;
@@ -1390,11 +1366,6 @@
     const files = [...(e.clipboardData?.items || [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile());
     if (files.length) { e.preventDefault(); addFiles(files); }
   });
-  // a floating button to read another screenshot once the picker has scrolled away
-  if ($('fab') && 'IntersectionObserver' in window) {
-    new IntersectionObserver(([en]) => { $('fab').hidden = en.isIntersecting; }).observe($('drop'));
-    $('fab').addEventListener('click', () => $('file').click());
-  }
   document.addEventListener('click', (e) => {
     const t = e.target.closest('button');
     if (!t) return;
@@ -1443,7 +1414,7 @@
         state.ind = ind; state.flags = {}; state.source = 'history'; state.autoFix = null; state.historyT = o.t;
         state.evalLevel = ind.level >= 60 ? 70 : 60;
         fillEditor(); renderAll();
-        $('hero').scrollIntoView({ block: 'start' });
+        $('cardSpecimen').scrollIntoView({ block: 'start' });
       }
       return;
     }
