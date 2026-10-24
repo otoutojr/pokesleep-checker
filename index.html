@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=20261024-2">
+<link rel="stylesheet" href="assets/app.css?v=20261024-3">
 </head>
 <body>
 <header class="site-header">
@@ -30,9 +30,8 @@
 </header>
 
 <main class="wrap" id="main">
-  <section class="card intake" aria-labelledby="intakeTitle">
-    <h2 class="intake-title" id="intakeTitle">スクショを読み取る</h2>
-    <p class="lede">ポケモン詳細画面のスクショを入れるだけ。iPhoneの中で読み取って、理想個体の何%か（だいふくさん式のランク）と、1日に稼ぐエナジーを出します。</p>
+  <section class="intake" aria-labelledby="intakeTitle">
+    <h2 class="sr-only" id="intakeTitle">スクショを読み取る</h2>
     <div class="install" id="installHint" hidden>
       <p>Safariの共有ボタンから「ホーム画面に追加」すると、アプリとして全画面で開けます。</p>
       <button type="button" id="installClose" aria-label="閉じる">×</button>
@@ -50,10 +49,12 @@
 
   <div class="sample-note" id="sampleNote">いま表示しているのはサンプル（ウッウ Lv.22）です。スクショを入れると自分のポケモンに置き換わります。</div>
 
-  <section class="card" id="cardSpecimen" aria-labelledby="spName"></section>
-  <section class="card" id="cardVerdict" aria-label="評価"></section>
-  <section class="card" id="cardDay" aria-label="数値"></section>
+  <section class="hero" id="hero" aria-label="評価">
+    <div class="hero-id" id="cardSpecimen"></div>
+    <div class="hero-verdict" id="cardVerdict"></div>
+  </section>
   <section class="card" id="cardWhy" aria-label="評価の内訳"></section>
+  <section class="card" id="cardDay" aria-label="数値"></section>
   <section class="card" id="cardCheck" aria-label="読み取りチェック"></section>
 
   <details class="card" id="editor">
@@ -158,13 +159,14 @@
   <p class="foot">データ更新: 2026年10月（ゲーム内レベル上限 Lv70、サブスキル解放 Lv10/25/50/70/80）</p>
   <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／ランクの基準: <a href="https://www.pokemonsleepdaifuku.com/checker/" target="_blank" rel="noopener">だいふくさんの個体値チェッカー</a>の公開情報／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）／デザイン: <a href="https://design.digital.go.jp/" target="_blank" rel="noopener">デジタル庁デザインシステム</a>を参考（MIT）</p>
 </main>
-<script src="assets/data.js?v=20261024-2"></script>
-<script src="assets/nito.js?v=20261024-2"></script>
-<script src="assets/engine.js?v=20261024-2"></script>
-<script src="vendor/tesseract/tesseract.min.js?v=20261024-2"></script>
-<script src="assets/ocr-parse.js?v=20261024-2"></script>
-<script src="assets/ing-icons.js?v=20261024-2"></script>
-<script src="assets/ocr.js?v=20261024-2"></script>
-<script src="assets/app.js?v=20261024-2"></script>
+<button type="button" class="fab" id="fab" hidden aria-label="別のスクショを読み取る"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9.2" cy="9.4" r="1.8" fill="currentColor"/><path d="m5 17 4.6-4.6 3 3 2.4-2.4L20 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+<script src="assets/data.js?v=20261024-3"></script>
+<script src="assets/nito.js?v=20261024-3"></script>
+<script src="assets/engine.js?v=20261024-3"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=20261024-3"></script>
+<script src="assets/ocr-parse.js?v=20261024-3"></script>
+<script src="assets/ing-icons.js?v=20261024-3"></script>
+<script src="assets/ocr.js?v=20261024-3"></script>
+<script src="assets/app.js?v=20261024-3"></script>
 </body>
 </html>
