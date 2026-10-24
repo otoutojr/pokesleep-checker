@@ -37,9 +37,10 @@
     });
   }
 
-  function toCanvas(src, maxW) {
+  // Small screenshots (resized when shared) are enlarged: the OCR reads small text much worse.
+  function toCanvas(src, maxW, minW) {
     const w0 = src.width, h0 = src.height;
-    const scale = w0 > maxW ? maxW / w0 : 1;
+    const scale = w0 > maxW ? maxW / w0 : minW && w0 < minW ? minW / w0 : 1;
     const c = document.createElement('canvas');
     c.width = Math.round(w0 * scale);
     c.height = Math.round(h0 * scale);
@@ -220,7 +221,7 @@
         else if (cur && x - cur.b > 2) { out.push(cur); cur = null; }
       }
       if (cur) out.push(cur);
-      return out.filter((r) => r.b - r.a >= 0.035 * W);
+      return out.filter((r) => r.b - r.a >= 0.026 * W);
     };
     const tops = [];
     for (let y = Math.max(y0, ref.y0 - 6); y <= Math.min(y1 - 1, ref.y0 + 2); y++) {
@@ -260,11 +261,14 @@
     }
     return best;
   }
-  async function readIngredientRow(canvas, labels) {
+  // The badges of the ingredient row, each tied to its slot (Lv1 / Lv30 / Lv60 from left to right):
+  // from the lock labels when some slots are still locked, else from the badges' own shape and place.
+  function ingredientSlots(canvas, labels) {
     const W = canvas.width;
     const anchors = labels.map((lb) => ({ lv: lb.lv, box: findBadgeBelow(canvas, lb.bbox) })).filter((x) => x.box);
-    if (!anchors.length) return [];
-    // all badges in the row, each tied to a slot (Lv1 / Lv30 / Lv60 from left to right)
+    if (!anchors.length) {
+      return window.IngIcons ? window.IngIcons.findRow(canvas).map((r) => ({ idx: r.slot, box: r.box })) : [];
+    }
     const row = badgesInRow(canvas, anchors[0].box);
     for (const an of anchors) if (!row.some((b) => Math.abs(b.x0 - an.box.x0) < 0.03 * W)) row.push(an.box);
     row.sort((p, q) => p.x0 - q.x0);
@@ -278,14 +282,24 @@
       if (idx < 0 || idx > 2 || off > 0.04 * W || slots.some((x) => x.idx === idx)) continue;
       slots.push({ idx, box: b });
     }
+    return slots;
+  }
+  async function readIngredientRow(canvas, labels) {
+    const slots = ingredientSlots(canvas, labels || []);
+    if (!slots.length) return [];
     const eng = await getEngWorker();
     const out = [];
     for (const sl of slots) {
       const { data } = await eng.recognize(badgeCrop(canvas, sl.box));
       const m = String(data.text || '').replace(/\s/g, '').match(/(\d{1,2})/);
-      out.push({ unlock: [1, 30, 60][sl.idx], count: m && +m[1] >= 1 && +m[1] <= 20 ? +m[1] : null, same: {} });
+      let icon = null;
+      try { icon = window.IngIcons ? window.IngIcons.score(canvas, sl.box) : null; } catch (e) { icon = null; }
+      out.push({ unlock: [1, 30, 60][sl.idx], count: m && +m[1] >= 1 && +m[1] <= 20 ? +m[1] : null, same: {}, box: sl.box, icon });
     }
+    // same sprite or not, only between icons drawn the same way (a locked icon is faded)
     for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) {
+      const fi = out[i].icon && out[i].icon.faded, fj = out[j].icon && out[j].icon.faded;
+      if (fi == null || fj == null || fi !== fj) continue;
       const diff = iconDiff(canvas, slots[i].box, slots[j].box);
       const same = diff < 12 ? true : diff > 24 ? false : undefined;
       if (same === undefined) continue;
@@ -312,7 +326,7 @@
     try {
       const worker = await getWorker();
       const bmp = await loadBitmap(file);
-      const base = toCanvas(bmp, 1300);
+      const base = toCanvas(bmp, 1300, 1080);
       if (bmp.close) bmp.close();
       const img = { width: base.width, height: base.height, passes: [], arrowAt: arrowSampler(base), boxColor: boxColorSampler(base) };
       const plan = [() => base, () => variant(base, 'th150')];
@@ -327,10 +341,8 @@
         img.passes.push(await recognize(worker, variant(base, 'minc')));
         res = OCRParse.parse(img, opts.vocab);
       }
-      if (res.lockLabels && res.lockLabels.length) {
-        if (onProgress) onProgress({ status: 'counts' });
-        try { res.ingredients = await readIngredientRow(base, res.lockLabels); } catch (e) { res.ingredients = []; }
-      }
+      if (onProgress) onProgress({ status: 'counts' });
+      try { res.ingredients = await readIngredientRow(base, res.lockLabels || []); } catch (e) { res.ingredients = []; }
       window.OCR.last = res; // kept for troubleshooting
       return res;
     } finally {

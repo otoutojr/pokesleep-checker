@@ -1,12 +1,12 @@
 /* Offline support. The app shell is network-first (so updates arrive when online);
  * the OCR engine and Japanese model are cache-first (large and versioned by path). */
-const VERSION = '2026-10-22.2';
+const VERSION = '2026-10-24.1';
 const SHELL_CACHE = 'shell-' + VERSION;
 const BIG_CACHE = 'ocr-tesseract-5.1.1';
 const FONT_CACHE = 'fonts-v1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
-  'assets/app.css', 'assets/data.js', 'assets/nito.js', 'assets/engine.js', 'assets/ocr-parse.js', 'assets/ocr.js', 'assets/app.js',
+  'assets/app.css', 'assets/data.js', 'assets/nito.js', 'assets/engine.js', 'assets/ocr-parse.js', 'assets/ing-icons.js', 'assets/ocr.js', 'assets/app.js',
   'vendor/tesseract/tesseract.min.js', 'icons/icon-192.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
 ];
 

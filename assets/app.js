@@ -577,7 +577,7 @@
       <div class="rows">${subRows}</div>
       <h3 class="card-title">食材${pi.code ? `（${pi.code}）` : ''}</h3>
       <div class="rows">${ingRows}</div>
-      ${ind.slots.some((x, i) => state.flags['ing' + i] && ind.level < [1, 30, 60][i]) ? '<p class="note">まだ解放されていない食材は画像から読めないので、仮の組み合わせで計算しています。違うときは「読み取り結果を直す」で選び直してください。</p>' : ''}
+      ${ind.slots.some((x, i) => state.flags['ing' + i] && ind.level < [1, 30, 60][i]) ? '<p class="note">まだ解放されていない食材のうち、アイコンがはっきり見えなかった枠は、仮の組み合わせで計算しています。違うときは「読み取り結果を直す」で選び直してください。</p>' : ''}
       <p class="note">この食材の組み合わせは、Lv60での食材の合計エナジーで ${pi.total}通り中 ${pi.rank}位です。</p>
       <p class="ideal">100%の基準（だいふくさんの方式・Lv${L}で開くぶん）: きのみ＝<b>${refText(refs.k)}</b>、食材＝<b>${refText(refs.f)}</b>、スキル＝<b>${refText(refs.s)}</b></p>
       <p class="note">${BASIS[spec]}がいちばん多くなる組み合わせは <b>${esc(best.nature.ja)}</b> ＋ ${idealSubs} です。</p>`;
@@ -1025,17 +1025,43 @@
     };
   }
 
-  // Ingredients from the badges: "x4" counts narrow each slot, and identical icons across slots
-  // (or different ones) carry a known slot's ingredient over (or rule it out).
+  // The ingredient whose icon fits clearly best among the given options, or null. Fits are trusted only
+  // when the icon was seen cleanly (not hidden behind the name card) and one option stands out.
+  const ICON_OK = 200, ICON_MARGIN = 1.8;
+  function iconRank(c, options) {
+    if (!c || !c.icon || !c.icon.err) return [];
+    return [...new Set(options.map((o) => o.name))].map((n) => ({ name: n, err: c.icon.err[n] }))
+      .filter((x) => x.err != null).sort((a, b) => a.err - b.err);
+  }
+  function iconPick(c, options, margin) {
+    const r = iconRank(c, options);
+    if (!r.length || r[0].err > ICON_OK) return null;
+    if (r.length > 1 && r[1].err < r[0].err * (margin || ICON_MARGIN)) return null;
+    return r[0].name;
+  }
+
+  // Ingredients from the badges: the icon itself, the "x4" count, and identical icons across slots
+  // (or different ones) carrying a known slot's ingredient over (or ruling it out).
   function applyCounts(sp, slots, flags, counts) {
     const U = [1, 30, 60];
     const byU = {};
     for (const c of counts || []) byU[c.unlock] = c;
     if (!Object.keys(byU).length) return;
-    const cand = [0, 1, 2].map((i) => PSE.slotOptions(sp, i));
+    const all = [0, 1, 2].map((i) => PSE.slotOptions(sp, i));
+    const cand = all.map((o) => o.slice());
+    const unsure = [false, false, false];
     [0, 1, 2].forEach((i) => {
       const c = byU[U[i]];
-      if (c && c.count) { const f = cand[i].filter((o) => o.count === c.count); if (f.length) cand[i] = f; }
+      if (!c) return;
+      if (c.count) { const f = cand[i].filter((o) => o.count === c.count); if (f.length) cand[i] = f; }
+      const pick = iconPick(c, cand[i]);
+      if (pick) cand[i] = cand[i].filter((o) => o.name === pick);
+      // an icon that clearly shows an ingredient the count rules out: the count was likely misread
+      const other = iconPick(c, all[i], 3);
+      if (other && !cand[i].some((o) => o.name === other)) {
+        cand[i] = all[i].filter((o) => o.name === other);
+        unsure[i] = true;
+      }
     });
     for (let round = 0; round < 3; round++) {
       for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
@@ -1049,8 +1075,13 @@
     }
     [0, 1, 2].forEach((i) => {
       if (!byU[U[i]] || !cand[i].length) return;
+      if (cand[i].length > 1) {
+        // still open: lean on whichever fits the icon best, even without a clear margin
+        const r = iconRank(byU[U[i]], cand[i]);
+        if (r.length && r[0].err <= ICON_OK) cand[i].sort((a, b) => (a.name === r[0].name ? -1 : b.name === r[0].name ? 1 : 0));
+      }
       slots[i] = cand[i][0];
-      if (cand[i].length === 1) delete flags['ing' + i]; else flags['ing' + i] = true;
+      if (cand[i].length === 1 && !unsure[i]) delete flags['ing' + i]; else flags['ing' + i] = true;
     });
   }
 
@@ -1122,8 +1153,28 @@
     }
     if (!found.length) return null;
     const diff = (x) => (x.sp === ind.sp ? 0 : 8) + (x.level === ind.level ? 0 : 4) + (x.nature === ind.nature ? 0 : 2) + (x.skillLevelShown === ind.skillLevelShown ? 0 : 1);
-    found.sort((a, b) => diff(a) - diff(b));
+    // when several ingredient choices give the same SP, the one that fits the icons (and the "x4"
+    // counts) better comes first
+    const byU = {};
+    for (const c of data.ingredients || []) byU[c.unlock] = c;
+    const iconCost = (x) => {
+      let cost = 0;
+      [0, 1, 2].forEach((i) => {
+        const c = byU[[1, 30, 60][i]];
+        if (!c || !x.slots[i]) return;
+        if (c.count && x.slots[i].count !== c.count) cost += Math.log(4);
+        const r = iconRank(c, PSE.slotOptions(x.sp, i));
+        if (!r.length || r[0].err > ICON_OK) return;
+        const e = r.find((y) => y.name === x.slots[i].name);
+        if (e) cost += Math.log(Math.max(e.err, 1) / Math.max(r[0].err, 1));
+      });
+      return cost;
+    };
+    found.forEach((x) => { x.$cost = iconCost(x); });
+    found.sort((a, b) => diff(a) - diff(b) || a.$cost - b.$cost);
     const best = found[0];
+    const close = found.filter((x) => diff(x) === diff(best) && x.$cost - best.$cost < Math.log(ICON_MARGIN));
+    found.forEach((x) => { delete x.$cost; });
     const f = Object.assign({}, flags);
     const uniq = (fn) => new Set(found.map(fn)).size === 1;
     const setFlag = (k, on) => { if (on) f[k] = true; else delete f[k]; };
@@ -1133,7 +1184,7 @@
     setFlag('skill', !uniq((x) => x.skillLevelShown));
     [0, 1, 2].forEach((i) => {
       if (PSE.slotOptions(best.sp, i).length <= 1) { delete f['ing' + i]; return; }
-      if (best.level >= [1, 30, 60][i]) setFlag('ing' + i, !uniq((x) => x.slots[i] && x.slots[i].name + x.slots[i].count));
+      if (best.level >= [1, 30, 60][i]) setFlag('ing' + i, new Set(close.map((x) => x.slots[i] && x.slots[i].name + x.slots[i].count)).size > 1);
     });
     const cands = [...new Set(found.map((x) => x.sp))];
     return { ind: best, flags: f, speciesCands: cands.length > 1 ? cands : null };
@@ -1204,7 +1255,12 @@
   function finishReading(read, flags, data) {
     let ind = Object.assign({}, read);
     let autoFix = null;
-    const res = resolveReading(ind, flags, data);
+    let res = resolveReading(ind, flags, data);
+    // "1,276" whose comma was read as a digit ("11276"): try the number without it
+    if (!res && data.spAlt && data.spAlt !== ind.spShown) {
+      res = resolveReading(Object.assign({}, ind, { spShown: data.spAlt }), flags, data);
+      if (res) read = Object.assign({}, read, { spShown: data.spAlt });
+    }
     if (res) {
       const changes = describeChanges(read, res.ind);
       if (changes.length && read.sp) autoFix = { label: changes.join('・'), before: describeChanges(res.ind, read).join('・'), prev: read };

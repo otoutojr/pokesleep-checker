@@ -295,7 +295,13 @@
     const spNum = (s) => +s.replace(/[^\d]/g, '');
     for (const l of topLines) {
       const m = l.text.match(/[S5$][PR][^\d]{0,2}(\d{1,3}(?:[,.、，]\d{3})+|\d{2,5})(?!\d)/);
-      if (m && spNum(m[1]) >= 100) { out.sp = spNum(m[1]); out.debug.spY = cy(l.bbox); break; }
+      if (m && spNum(m[1]) >= 100) {
+        out.sp = spNum(m[1]);
+        // five plain digits: often a 4-digit SP whose comma was read as a digit ("1,276" -> "11276")
+        if (/^\d{5}$/.test(m[1])) out.spAlt = +(m[1][0] + m[1].slice(2));
+        out.debug.spY = cy(l.bbox);
+        break;
+      }
     }
     if (out.sp == null) {
       // the "SP" label itself can be lost; a comma-grouped number in the name card is still the SP
@@ -400,9 +406,12 @@
     for (const k of ['displayName', 'species', 'level', 'sp', 'helpTime', 'carry', 'mainSkill', 'mainSkillLevel', 'nature', 'natureUp', 'natureDown', 'ribbon']) {
       if (out[k] == null) { const r = results.find((x) => x[k] != null); if (r) out[k] = r[k]; }
     }
+    if (out.spAlt == null) { const r = results.find((x) => x.sp === out.sp && x.spAlt != null); if (r) out.spAlt = r.spAlt; }
     out.levelCandidates = [...new Set(results.flatMap((r) => r.levelCandidates || []))];
     const ings = results.flatMap((r) => r.ingredients || []);
-    out.ingredients = [1, 30, 60].map((u) => ings.find((x) => x.unlock === u)).filter(Boolean);
+    // per slot, the screenshot where its icon is seen most clearly
+    const clarity = (x) => (x.icon && x.icon.err ? Math.min(...Object.values(x.icon.err)) : Infinity);
+    out.ingredients = [1, 30, 60].map((u) => ings.filter((x) => x.unlock === u).sort((a, b) => clarity(a) - clarity(b))[0]).filter(Boolean);
     out.effectsSeen = [...new Set(results.flatMap((r) => r.effectsSeen || []))];
     out.natureNeutral = results.some((r) => r.natureNeutral);
     out.subSkills = [0, 1, 2, 3, 4].map((i) => {
