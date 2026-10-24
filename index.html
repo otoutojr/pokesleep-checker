@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ポケスリ個体チェッカー</title>
 <meta name="description" content="ポケモンスリープの詳細画面のスクショから、個体の当たり度と1日のエナジーを出す個人用ツール">
-<meta name="theme-color" content="#19204C">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -17,16 +18,20 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=20261024-1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap">
+<link rel="stylesheet" href="assets/app.css?v=20261024-2">
 </head>
 <body>
-<header class="band">
+<header class="site-header">
   <div class="wrap">
-    <div class="brand">
-      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M19.5 3.2A12 12 0 1 0 26.8 19 9.5 9.5 0 0 1 19.5 3.2Z" fill="var(--moon)"/></svg>
-      <h1>ポケスリ個体チェッカー</h1>
-    </div>
+    <span class="logo" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 30 30"><defs><mask id="logoMoon"><rect width="30" height="30" fill="#fff"/><circle cx="20.6" cy="10.4" r="9.6" fill="#000"/></mask></defs><circle cx="15" cy="15" r="12.5" fill="currentColor" mask="url(#logoMoon)"/></svg></span>
+    <h1 class="site-name">ポケスリ個体チェッカー</h1>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <section class="card intake" aria-labelledby="intakeTitle">
+    <h2 class="intake-title" id="intakeTitle">スクショを読み取る</h2>
     <p class="lede">ポケモン詳細画面のスクショを入れるだけ。iPhoneの中で読み取って、理想個体の何%か（だいふくさん式のランク）と、1日に稼ぐエナジーを出します。</p>
     <div class="install" id="installHint" hidden>
       <p>Safariの共有ボタンから「ホーム画面に追加」すると、アプリとして全画面で開けます。</p>
@@ -34,20 +39,15 @@
     </div>
     <label class="drop" id="drop" for="file">
       <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/*" multiple aria-describedby="dropSub">
-      <span class="drop-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9.2" cy="9.4" r="1.8" fill="currentColor"/><path d="m5 17 4.6-4.6 3 3 2.4-2.4L20 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
-      <span>
-        <span class="drop-title" id="dropTitle">スクショを選ぶ</span>
-        <span class="drop-sub" id="dropSub">ポケモンの詳細画面を1〜3枚。名前・SPからサブスキル・せいかくまでが写っていればOK。上下2枚に分けても読めます。</span>
-      </span>
+      <span class="drop-btn"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9.2" cy="9.4" r="1.8" fill="currentColor"/><path d="m5 17 4.6-4.6 3 3 2.4-2.4L20 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span id="dropTitle">スクショを選ぶ</span></span>
+      <span class="drop-sub" id="dropSub">ポケモンの詳細画面を1〜3枚。名前・SPからサブスキル・せいかくまでが写っていればOK。上下2枚に分けても読めます。</span>
     </label>
     <div class="intake-row">
       <div class="thumbs" id="thumbs"></div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
-  </div>
-</header>
+  </section>
 
-<main class="wrap" id="main">
   <div class="sample-note" id="sampleNote">いま表示しているのはサンプル（ウッウ Lv.22）です。スクショを入れると自分のポケモンに置き換わります。</div>
 
   <section class="card" id="cardSpecimen" aria-labelledby="spName"></section>
@@ -156,15 +156,15 @@
     </div>
   </details>
   <p class="foot">データ更新: 2026年10月（ゲーム内レベル上限 Lv70、サブスキル解放 Lv10/25/50/70/80）</p>
-  <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／ランクの基準: <a href="https://www.pokemonsleepdaifuku.com/checker/" target="_blank" rel="noopener">だいふくさんの個体値チェッカー</a>の公開情報／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）</p>
+  <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／ランクの基準: <a href="https://www.pokemonsleepdaifuku.com/checker/" target="_blank" rel="noopener">だいふくさんの個体値チェッカー</a>の公開情報／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）／デザイン: <a href="https://design.digital.go.jp/" target="_blank" rel="noopener">デジタル庁デザインシステム</a>を参考（MIT）</p>
 </main>
-<script src="assets/data.js?v=20261024-1"></script>
-<script src="assets/nito.js?v=20261024-1"></script>
-<script src="assets/engine.js?v=20261024-1"></script>
-<script src="vendor/tesseract/tesseract.min.js?v=20261024-1"></script>
-<script src="assets/ocr-parse.js?v=20261024-1"></script>
-<script src="assets/ing-icons.js?v=20261024-1"></script>
-<script src="assets/ocr.js?v=20261024-1"></script>
-<script src="assets/app.js?v=20261024-1"></script>
+<script src="assets/data.js?v=20261024-2"></script>
+<script src="assets/nito.js?v=20261024-2"></script>
+<script src="assets/engine.js?v=20261024-2"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=20261024-2"></script>
+<script src="assets/ocr-parse.js?v=20261024-2"></script>
+<script src="assets/ing-icons.js?v=20261024-2"></script>
+<script src="assets/ocr.js?v=20261024-2"></script>
+<script src="assets/app.js?v=20261024-2"></script>
 </body>
 </html>

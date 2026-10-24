@@ -634,7 +634,7 @@
       </dl>
       <h3 class="card-title">レベルごとの見込み</h3>
       <div class="lvtable-wrap" id="lvTable"></div>
-      <p class="note">${ind.from ? `${esc(ind.from.ja)}を${esc(ind.sp.ja)}に進化させた姿の数値です。` : ''}nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}）。ランクの理想個体比も、この計算のおてつだい回数・所持数・スキル回数から出しています。</p>`;
+      <p class="note">${ind.from ? `${esc(ind.from.ja)}を${esc(ind.sp.ja)}に進化させた姿の数値です。` : ''}nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}）。ランク（理想個体比）は、だいふくさんのチェッカーと同じ別の計算で出しています（「評価のしくみ」を参照）。</p>`;
     renderLevelTable(ind);
   }
   function renderLevelTable(ind) {
@@ -934,7 +934,7 @@
   function setStatus(html, tone, spinning) {
     const el = $('status');
     el.dataset.tone = tone || '';
-    el.innerHTML = (spinning ? '<span class="spinner" aria-hidden="true"></span>' : '') + html;
+    el.innerHTML = html ? (spinning ? '<span class="spinner" aria-hidden="true"></span>' : '') + `<span class="status-text">${html}</span>` : '';
   }
 
   const splitSkill = (ja) => String(ja || '').split(/\s*[()（）]\s*/).filter(Boolean);
