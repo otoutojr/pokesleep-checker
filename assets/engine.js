@@ -778,11 +778,20 @@ const PSE = (function () {
     f: { nature: 'うっかりや', subs: ['IFM', 'IFS', 'HSM', 'HSS'] },
     s: { nature: 'なまいき', subs: ['STM', 'STS', 'HSM', 'HSS'] },
   };
+  // patterns picked for Pokémon the checker has not classified yet, by evolution line ({ anc: tribe })
+  let TRIBE_PICK = {};
+  function setTribePicks(m) { TRIBE_PICK = Object.assign({}, m || {}); dSpreadCache.clear(); }
+  /** whether the checker has classified this Pokémon (or its final form) */
+  function isClassified(sp) {
+    return !!(D_TRIBE_OF[sp.en] || SPECIES.some((x) => x.anc === sp.anc && x.el === 0 && D_TRIBE_OF[x.en]));
+  }
   function dTribe(sp) {
     if (D_TRIBE_OF[sp.en]) return D_TRIBE_OF[sp.en];
     // a pre-evolution: the pattern of its final form
     const fin = SPECIES.find((x) => x.anc === sp.anc && x.el === 0 && D_TRIBE_OF[x.en]);
     if (fin) return D_TRIBE_OF[fin.en];
+    const pick = TRIBE_PICK[sp.anc];
+    if (pick && D_W[pick] && pick[0] === (sp.spec === 'A' ? 'S' : sp.spec)) return pick;
     return sp.spec === 'B' ? 'B' : sp.spec === 'I' ? 'I' : 'S';
   }
   // one day under the checker's model
@@ -899,7 +908,7 @@ const PSE = (function () {
   }
   const dSpreadCache = new Map();
   function idealSpread(ctx) {
-    const key = [ctx.sp.idx, ctx.level, dAvg(ctx), ctx.maxSkill ? 'max' : 'cur'].join('|');
+    const key = [ctx.sp.idx, ctx.level, dAvg(ctx), ctx.maxSkill ? 'max' : 'cur', dTribe(ctx.sp)].join('|');
     if (dSpreadCache.has(key)) return dSpreadCache.get(key);
     const tribe = dTribe(ctx.sp);
     const vals = [], ws = [];
@@ -1066,7 +1075,7 @@ const PSE = (function () {
 
   return {
     loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energySegments, deriveBase, naturesFor, formForNature,
-    idealRatio, idealStanding, idealQuick, dRank, dTribe, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
+    idealRatio, idealStanding, idealQuick, dRank, dTribe, isClassified, setTribePicks, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },

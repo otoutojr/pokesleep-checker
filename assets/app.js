@@ -49,6 +49,10 @@
   const PKEY = 'pse:v1:evopick';
   const BKEY = 'pse:v1:box';
   const BUKEY = 'pse:v1:boxui';
+  const TKEY = 'pse:v1:tribe';
+  // the pattern used until だいふく's checker classifies a Pokémon (by evolution line): Mismagius as ⑦, since
+  // Berry Finding S adds about 1.8x the energy of Skill Trigger M for it in the reference calculator
+  const TRIBE_DEFAULT = { 200: 'SB' };
   // short sub skill names for the box list
   const SUB_SHORT = {
     HB: 'おてボ', ERB: 'げんき回復', BFS: 'きのみ数', SLM: 'スキルLvM', SLS: 'スキルLvS', HSM: 'スピードM', HSS: 'スピードS',
@@ -91,7 +95,9 @@
     portrait: null,
     portraitUrl: null,
     boxUi: Object.assign({ sort: 'ideal', type: '', rank: '' }, store.get(BUKEY, {})),
+    tribePick: Object.assign({}, TRIBE_DEFAULT, store.get(TKEY, {})),
   };
+  PSE.setTribePicks(state.tribePick);
 
   // ---------- reference calculator (nitoyon/pokesleep-tool, bundled as NITO) ----------
   const REF = (() => {
@@ -478,6 +484,20 @@
     }).join('');
   }
 
+  // だいふく's checker has not classified this Pokémon yet: its pattern can be picked here (kept per evolution line)
+  const TRIBE_CHOICES = { S: ['S', 'SB'], B: ['B', 'BI', 'BS'], I: ['I', 'IB', 'IS'], A: ['S', 'SB'] };
+  function tribePicker(ind, d) {
+    if (PSE.isClassified(ind.sp)) return '';
+    const opts = TRIBE_CHOICES[ind.sp.spec] || [];
+    if (opts.length < 2) return '';
+    const btns = opts.map((k) => `<button type="button" data-tribe="${k}" data-anc="${ind.sp.anc}" aria-pressed="${d.tribe === k}">${PSE.D_TRIBES[k][0]}${esc(PSE.D_TRIBES[k][1])}</button>`).join('');
+    return `<div class="tribe-pick">
+      <p>だいふくさんのチェッカーは、${esc(ind.sp.ja)}をまだ9分類のどれにするか決めていません。ここでは仮の分類を選べます（ボックスのランクにも反映）。</p>
+      <div class="seg" role="group" aria-label="仮の分類">${btns}</div>
+      ${d.tribe === 'SB' ? '<p class="note">⑦はきのみの量も重く見て、きのみの数Sに+11を足す分類です。</p>' : d.tribe === 'S' ? '<p class="note">⑨はスキルの回数を重く見る分類で、きのみの数Sはほとんど評価されません。</p>' : ''}
+    </div>`;
+  }
+
   function renderVerdict(ind, ev, evs, levels) {
     const d = ev.ideal;
     const key = rankKey(d.rank);
@@ -491,9 +511,10 @@
         <div class="verdict-text">
           <span class="eyebrow">${esc(ind.sp.ja)}・${d.tribeNo}${esc(d.tribeJa)}・Lv${ev.L}のとき${ev.L !== ind.level ? `（いまLv${ind.level}）` : ''}</span>
           <span class="big">理想個体の ${fmtPct(d.pct)}<small>${RANK_WORD[d.rank]}</small></span>
-          <span class="subline">同じポケモンの${ev.n.toLocaleString('ja-JP')}通りの中では上位${fmtTop(ev.role.top)}（${BASIS[ind.sp.spec]}で比較）</span>
+          <span class="subline">同じポケモンの${ev.n.toLocaleString('ja-JP')}通りの中では上位${fmtTop(ev.role.top)}（${BASIS[ind.sp.spec]}で比較）${ind.sp.spec !== 'A' ? `・1日の総エナジーでは上位${fmtTop(ev.str.top)}` : ''}</span>
         </div>
       </div>
+      ${tribePicker(ind, d)}
       ${rankBar(ev)}
       ${roleBars(ind, ev)}
       <p class="summary">${esc(summaryText(ind, ev))}</p>
@@ -961,7 +982,7 @@
     };
   }
   // grades in the history and the box are re-evaluated when the model or the settings change
-  const gradeSig = () => ['m5', state.sleepScore, state.fieldBonus, state.maxSkill ? 1 : 0, state.evolve ? 1 : 0, JSON.stringify(state.evoPick)].join('|');
+  const gradeSig = () => ['m5', state.sleepScore, state.fieldBonus, state.maxSkill ? 1 : 0, state.evolve ? 1 : 0, JSON.stringify(state.evoPick), JSON.stringify(state.tribePick)].join('|');
   // the rank and ideal ratio at Lv60 with the current settings (the same figures as the verdict card)
   function gradeOf(ind) {
     try {
@@ -2136,6 +2157,14 @@
       state.boxId = boxUpsert(state.ind, { ck: currentCheck() }, t.id === 'boxUpdate' ? t.dataset.id : undefined).id;
       if (state.portrait) pics.put(state.boxId, state.portrait);
       renderAll();
+      return;
+    }
+    if (t.dataset.tribe && t.dataset.anc) {
+      state.tribePick = Object.assign({}, state.tribePick, { [t.dataset.anc]: t.dataset.tribe });
+      store.set(TKEY, state.tribePick);
+      PSE.setTribePicks(state.tribePick);
+      renderAll();
+      regradeHistory();
       return;
     }
     if (t.id === 'boxChecked') {
