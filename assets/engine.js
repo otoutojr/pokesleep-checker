@@ -142,7 +142,7 @@ const PSE = (function () {
       'Charge Strength M (Bad Dreams)', 'Charge Strength S', 'Charge Strength S (Random)', 'Charge Strength S (Stockpile)',
       'Extra Helpful S', 'Cooking Power-Up S', 'Cooking Power-Up S (Minus)', 'Metronome', 'Skill Copy (Transform)',
       'Skill Copy (Mimic)', 'Ingredient Draw S', 'Ingredient Draw S (Super Luck)', 'Ingredient Draw S (Hyper Cutter)',
-      'Cooking Assist S', 'Cooking Assist S (Bulk Up)'].includes(skill)) return 7;
+      'Cooking Assist S', 'Cooking Assist S (Bulk Up)', 'Cooking Advance S (Mystical Fire)'].includes(skill)) return 7;
     return 6;
   }
   // Skill value used by the in-game SP formula
@@ -155,6 +155,8 @@ const PSE = (function () {
     if (skill === 'Charge Strength M') return T([880, 1251, 1726, 2383, 3290, 4546, 6252]);
     if (skill === 'Energy for Everyone S') return T([1120, 1593, 2197, 3033, 4187, 5785]);
     if (skill === 'Cooking Assist S (Bulk Up)') return T([1144, 1627, 2244, 3098, 4277, 5910, 7596]);
+    // Mystical Fire: RaenonX's game data (pks.raenonx.cc)
+    if (skill === 'Cooking Advance S (Mystical Fire)') return T([1144, 1626, 2244, 3098, 4277, 5910, 7596]);
     if (skill === 'Energy for Everyone S (Berry Juice)') return T([1220, 1735, 2392, 3303, 4559, 6299]);
     if (skill === 'Helper Boost') return T([2800, 3902, 5273, 6975, 9317, 12438]);
     if (skill === 'Berry Burst (Draco Meteor)') return T([2380, 3385, 4670, 6445, 8898, 12294]);

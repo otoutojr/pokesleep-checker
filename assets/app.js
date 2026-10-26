@@ -260,13 +260,15 @@
     return (zero ? '±' : x > 0 ? '+' : '−') + body;
   };
   const fmtMin = (min) => { const m = Math.round(min); return (m >= 60 ? Math.floor(m / 60) + '時間' : '') + (m % 60) + '分'; };
+  // species whose stats come from RaenonX (pks.raenonx.cc) until the bundled data has them
+  const RAENONX_DATA = new Set(['Misdreavus', 'Mismagius']);
   function skillUnit(skill) {
     if (/^Charge Strength|^Berry Burst|^Berry Zone/.test(skill)) return { label: 'エナジー', u: '', strength: true };
     if (/^Charge Energy|^Energizing Cheer/.test(skill)) return { label: 'げんき', u: '' };
     if (/^Energy for Everyone/.test(skill)) return { label: '全員のげんき', u: '' };
     if (/^Ingredient Magnet|^Ingredient Draw|^Cooking Assist/.test(skill)) return { label: '食材', u: '個' };
     if (/^Dream Shard/.test(skill)) return { label: 'ゆめのかけら', u: '' };
-    if (/^Cooking Power-Up/.test(skill)) return { label: 'なべ容量', u: '' };
+    if (/^Cooking Power-Up|^Cooking Advance/.test(skill)) return { label: 'なべ容量', u: '' };
     if (skill === 'Tasty Chance S') return { label: '大成功率', u: '%' };
     if (skill === 'Extra Helpful S' || skill === 'Helper Boost') return { label: 'おてつだい', u: '回' };
     if (/^Metronome|^Skill Copy/.test(skill)) return { label: '', u: '', count: true };
@@ -673,7 +675,11 @@
     const per = r.skillValuePerTrigger || 0;
     if (unit.strength && per > 0) skillMeta += `・1回で${fmtInt(per)}エナジー`;
     else if (!unit.count && per > 0) skillMeta += `・1回で${unit.label} ${unit.u === '%' ? '+' : ''}${fmtNice(per)}${unit.u}（1日 ${unit.u === '%' ? '+' : ''}${fmtNice(r.skillValue)}${unit.u}）`;
-    if ((r.skillValue2 || 0) > 0 && !(r.skillStrength2 > 0)) skillMeta += `・追加効果 ${fmtNice(r.skillValue2)}`;
+    if (ind.sp.skill === 'Cooking Advance S (Mystical Fire)') {
+      // the second effect: the next cooking's great success chance (not counted as energy)
+      const per2 = r.skillValuePerTrigger2 || 0;
+      if (per2 > 0) skillMeta += `・大成功率 +${fmtNice(per2)}%（1日 +${fmtNice(r.skillValue2)}%）`;
+    } else if ((r.skillValue2 || 0) > 0 && !(r.skillStrength2 > 0)) skillMeta += `・追加効果 ${fmtNice(r.skillValue2)}`;
     const wake = r.skillProbabilityAfterWakeup || { once: 0, twice: 0 };
     const twice = (spec === 'S' || spec === 'A') && wake.twice > 0 ? `<small>2回ぶん ${fmt1(wake.twice * 100)}%</small>` : '';
     const hl = (k) => (({ B: 'b', I: 'i', S: 's' })[spec] === k ? ' hl' : '');
@@ -693,10 +699,11 @@
         <div><dt>おてつだい回数</dt><dd>${fmt1(r.total.all)}回<small>起きている間 ${fmt1(r.awake.all)}・寝ている間 ${fmt1(r.asleep.all)}</small></dd></div>
         <div><dt>最大所持数</dt><dd>${r.carryLimit}個<small>${r.timeToFullInventory < 0 ? '寝ている間にあふれない' : `寝てから${fmtMin(r.timeToFullInventory)}であふれる`}</small></dd></div>
         <div><dt>翌朝スキル発生率</dt><dd>${fmt1(wake.once * 100)}%${twice}</dd></div>
+        ${c.iv.pityProcHelpCount > 0 ? `<div><dt>スキルの天井</dt><dd>おてつだい${c.iv.pityProcHelpCount}回<small>スキルが出ないまま続くと、発動が確定する回数</small></dd></div>` : ''}
       </dl>
       <h3 class="card-title">レベルごとの見込み</h3>
       <div class="lvtable-wrap" id="lvTable"></div>
-      <p class="note">${ind.from ? `${esc(ind.from.ja)}を${esc(ind.sp.ja)}に進化させた姿の数値です。` : ''}nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}）。ランク（理想個体比）は、だいふくさんのチェッカーと同じ別の計算で出しています（「評価のしくみ」を参照）。</p>`;
+      <p class="note">${ind.from ? `${esc(ind.from.ja)}を${esc(ind.sp.ja)}に進化させた姿の数値です。` : ''}nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}）。ランク（理想個体比）は、だいふくさんのチェッカーと同じ別の計算で出しています（「評価のしくみ」を参照）。${/^Tasty Chance|Mystical Fire/.test(ind.sp.skill) ? '料理の大成功確率が上がるぶんは、1日のエナジーには入れていません。' : ''}${RAENONX_DATA.has(ind.sp.en) ? `${esc(ind.sp.ja)}のデータ（おてつだい時間・食材とスキルの確率・食材・最大所持数）${ind.sp.skill === 'Cooking Advance S (Mystical Fire)' ? 'とマジカルフレイムの効果量' : ''}の出典: <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX ポケスリ攻略ツール</a>（登場したばかりのため、確率はこれから少し変わることがあります）。` : ''}</p>`;
     renderLevelTable(ind);
   }
   function renderLevelTable(ind) {
@@ -1031,6 +1038,17 @@
     }
     return { sp: null, sure: false };
   }
+  // A name read short can be the start of an evolution's name (ムウマージ read as ムウマ). When the skill on
+  // screen belongs to that evolution, follow the skill, and ask to check the name.
+  function followSkill(sp, data, flags) {
+    const skill = data && data.mainSkillName ? norm(data.mainSkillName) : null;
+    if (!sp || !skill || skillNamesOf(sp.skill).includes(skill)) return sp;
+    const kin = PSE.SPECIES.filter((s) => s.supported && s !== sp && s.anc === sp.anc && norm(s.ja).startsWith(norm(sp.ja))
+      && skillNamesOf(s.skill).includes(skill));
+    if (kin.length !== 1) return sp;
+    flags.species = true;
+    return kin[0];
+  }
   function matchNature(name, up, down) {
     const byName = PSE.NATURES.find((n) => norm(n.ja) === norm(name));
     const u = effectFromLabel(up), d = effectFromLabel(down);
@@ -1049,7 +1067,7 @@
     const flags = {};
     const m = matchSpecies(data.species, data.displayName);
     if (!m.sure) flags.species = true;
-    const sp = m.sp;
+    const sp = followSkill(m.sp, data, flags);
     let level = num(data.level);
     if (!level || level > 100) { level = 30; flags.level = true; }
     const nat = matchNature(data.nature, data.natureUp, data.natureDown);
@@ -1232,7 +1250,9 @@
       found = search(PSE.SPECIES.filter((s) => s.supported && s !== ind.sp && (!skill || skillNamesOf(s.skill).includes(skill))));
     }
     if (!found.length) return null;
-    const diff = (x) => (x.sp === ind.sp ? 0 : 8) + (x.level === ind.level ? 0 : 4) + (x.nature === ind.nature ? 0 : 2) + (x.skillLevelShown === ind.skillLevelShown ? 0 : 1);
+    // another species of the read name's evolution line is likelier than an unrelated one (ムウマージ read as ムウマ)
+    const kin = (s) => ind.sp && s.anc === ind.sp.anc;
+    const diff = (x) => (x.sp === ind.sp ? 0 : kin(x.sp) ? 4 : 8) + (x.level === ind.level ? 0 : 4) + (x.nature === ind.nature ? 0 : 2) + (x.skillLevelShown === ind.skillLevelShown ? 0 : 1);
     // when several ingredient choices give the same SP, the one that fits the icons (and the "x4"
     // counts) better comes first
     const byU = {};
