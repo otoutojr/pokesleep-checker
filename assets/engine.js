@@ -938,6 +938,13 @@ const PSE = (function () {
     const above = dCountAbove(D, pct);
     return { rank, total: D.total, place: above + 1, placeInRank: above - (i ? upTo[i - 1] : 0) + 1, inRank: counts[rank], counts };
   }
+  /** the ideal ratio and rank alone, for lists: the same figures as evaluate(ind, level).ideal, without the energy
+   *  simulation (the checker's score needs only the species, level, ingredients and the skill setting) */
+  function idealQuick(ind, level) {
+    const ctx = { sp: ind.sp, level, slots: ind.slots, maxSkill: !!(ind.env && ind.env.maxSkill) };
+    const r = idealRatio(ctx, ind.nature, activeSubs(ind.subs, level));
+    return { pct: r.pct, rank: r.rank, tribe: r.tribe };
+  }
 
   // ---------- evaluate ----------
   function deriveBase(ind) {
@@ -1059,7 +1066,7 @@ const PSE = (function () {
 
   return {
     loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energySegments, deriveBase, naturesFor, formForNature,
-    idealRatio, idealStanding, dRank, dTribe, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
+    idealRatio, idealStanding, idealQuick, dRank, dTribe, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },

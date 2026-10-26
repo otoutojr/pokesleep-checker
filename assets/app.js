@@ -47,6 +47,14 @@
   const MKEY = 'pse:v1:maxskill';
   const EKEY = 'pse:v1:evolve';
   const PKEY = 'pse:v1:evopick';
+  const BKEY = 'pse:v1:box';
+  const BUKEY = 'pse:v1:boxui';
+  // short sub skill names for the box list
+  const SUB_SHORT = {
+    HB: 'おてボ', ERB: 'げんき回復', BFS: 'きのみ数', SLM: 'スキルLvM', SLS: 'スキルLvS', HSM: 'スピードM', HSS: 'スピードS',
+    IFM: '食材確率M', IFS: '食材確率S', STM: 'スキル確率M', STS: 'スキル確率S', INL: '所持数L', INM: '所持数M', INS: '所持数S',
+    DSB: 'ゆめかけ', REB: 'リサーチEXP', SEB: '睡眠EXP',
+  };
 
   // ---------- individual helpers ----------
   function defaultSlots(sp) {
@@ -77,6 +85,9 @@
     evoPick: store.get(PKEY, {}),
     files: [],
     autoFix: null,
+    // the box entry shown in the checker (edits update it)
+    boxId: null,
+    boxUi: Object.assign({ sort: 'ideal', type: '', rank: '' }, store.get(BUKEY, {})),
   };
 
   // ---------- reference calculator (nitoyon/pokesleep-tool, bundled as NITO) ----------
@@ -306,6 +317,7 @@
             <span class="chip">${esc(PSE.TYPE_JA[sp.type] || sp.type)}・${esc(PSE.BERRY_JA[sp.type] || 'きのみ')}</span>
             <span class="chip">${esc(skillJa)} Lv.${ind.skillLevelShown || 1}</span>
           </div>
+          ${boxActionHtml()}
         </div>
         ${spBox}
       </div>`;
@@ -944,35 +956,39 @@
       spShown: o.spv, helpTimeShown: o.ht, carryShown: o.c, ribbon: o.r || 0, displayName: o.d || '',
     };
   }
-  // grades in the history are re-evaluated when the model or the settings change
+  // grades in the history and the box are re-evaluated when the model or the settings change
   const gradeSig = () => ['m5', state.sleepScore, state.fieldBonus, state.maxSkill ? 1 : 0, state.evolve ? 1 : 0, JSON.stringify(state.evoPick)].join('|');
-  let regrading = 0;
-  async function regradeHistory() {
-    const my = ++regrading;
+  // the rank and ideal ratio at Lv60 with the current settings (the same figures as the verdict card)
+  function gradeOf(ind) {
+    try {
+      const x = withSettings(ind);
+      if (!x.sp.supported) return null;
+      const r = PSE.idealQuick(x, 60);
+      return { rank: r.rank, pct: r.pct };
+    } catch { return null; }
+  }
+  const asEv = (g) => (g ? { ideal: g } : null);
+  function regradeList(key) {
     const sig = gradeSig();
-    const list = store.get(HKEY, []);
-    const done = [];
+    const list = store.get(key, []);
+    let changed = false;
     for (const o of list) {
       if (o.gs === sig) continue;
-      await sleep(0);
-      if (my !== regrading) return;
       const ind = deserialize(o);
-      let g = o.g, top = o.p;
-      if (ind && ind.sp.supported) {
-        try { const ev = PSE.evaluate(withSettings(ind), 60); g = ev.ideal.rank; top = Math.round(ev.ideal.pct * 10) / 10; } catch { /* keep the old grade */ }
-      }
-      done.push({ t: o.t, g, p: top });
+      const g = ind ? gradeOf(ind) : null;
+      if (g) { o.g = g.rank; o.p = Math.round(g.pct * 10) / 10; }
+      o.gs = sig;
+      changed = true;
     }
-    if (!done.length || my !== regrading) return;
-    const cur = store.get(HKEY, []);
-    for (const d of done) { const c = cur.find((x) => x.t === d.t); if (c) { c.g = d.g; c.p = d.p; c.gs = sig; } }
-    store.set(HKEY, cur);
-    renderHistory();
+    if (changed) store.set(key, list);
+    return changed;
+  }
+  function regradeHistory() {
+    if (regradeList(HKEY)) renderHistory();
+    if (regradeList(BKEY)) { renderMenuCount(); if ($('boxView').open) renderBox(); }
   }
   function saveHistory(ind, replaceT) {
-    let ev = null;
-    try { ev = PSE.evaluate(withSettings(ind), 60); } catch { ev = null; }
-    const item = serialize(ind, ev);
+    const item = serialize(ind, asEv(gradeOf(ind)));
     const list = store.get(HKEY, []).filter((x) => x.t !== replaceT && !(x.sp === item.sp && x.lv === item.lv && x.n === item.n && JSON.stringify(x.s) === JSON.stringify(item.s)));
     list.unshift(item);
     store.set(HKEY, list.slice(0, 20));
@@ -998,6 +1014,197 @@
       </div>`;
     }).join('');
   }
+
+  // ---------- box: the individuals kept on this device ----------
+  // One entry per individual: the same evolution line, nature, sub skills and ingredients is the same individual
+  // (re-reading it later, at a higher level or evolved, updates the entry).
+  const boxAll = () => store.get(BKEY, []);
+  let persistAsked = false;
+  const boxPut = (list) => {
+    store.set(BKEY, list);
+    renderMenuCount();
+    // ask the browser to keep this app's storage (best effort; iOS may decide on its own)
+    if (!persistAsked && list.length && navigator.storage && navigator.storage.persist) { persistAsked = true; navigator.storage.persist().catch(() => {}); }
+  };
+  const speciesOf = (en) => PSE.SPECIES.find((s) => s.en === en) || null;
+  const lineOf = (en) => { const sp = speciesOf(en); return sp ? String(sp.anc != null ? sp.anc : sp.en) : String(en); };
+  const boxKey = (o) => [lineOf(o.sp), o.n, (o.s || []).map((k) => k || '-').join(','), (o.i || []).map((x) => (x ? x[0] : '-')).join(',')].join('|');
+  const newBoxId = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  // needs checking: the SP on screen did not match, or some fields stayed unsure
+  const needsCheck = (ind, unsure) => unsure > 0 || (!!ind.spShown && !spMatches(ind));
+  function boxItemOf(ind, extra) {
+    const item = serialize(ind, asEv(gradeOf(ind)));
+    return Object.assign(item, extra || {});
+  }
+  /** adds an individual, or updates its entry (by id, or by identity when it is not older than the entry) */
+  function boxUpsert(ind, extra, id) {
+    const list = boxAll();
+    const item = boxItemOf(ind, extra);
+    const key = boxKey(item);
+    const i = id ? list.findIndex((x) => x.id === id) : list.findIndex((x) => boxKey(x) === key);
+    if (i >= 0) {
+      const old = list[i];
+      if (!id && item.lv < old.lv) return { id: old.id, status: 'kept' };
+      list[i] = Object.assign({}, old, item, { id: old.id, a: old.a || old.t });
+      boxPut(list);
+      return { id: old.id, status: 'updated' };
+    }
+    item.id = newBoxId();
+    item.a = item.t;
+    list.unshift(item);
+    boxPut(list);
+    return { id: item.id, status: 'new' };
+  }
+  // the box entry of the same individual (by identity), or null
+  function boxFind(ind) {
+    if (!ind || !ind.sp) return null;
+    const key = boxKey(serialize(ind, null));
+    return boxAll().find((x) => boxKey(x) === key) || null;
+  }
+  const boxLinked = () => (state.boxId ? boxAll().find((x) => x.id === state.boxId) || null : null);
+  function boxRemove(id) {
+    boxPut(boxAll().filter((x) => x.id !== id));
+    if (state.boxId === id) state.boxId = null;
+  }
+  function renderMenuCount() {
+    const n = boxAll().length;
+    const el = $('menuBoxCount');
+    if (el) el.textContent = `${n}匹`;
+    const h = $('hBox');
+    if (h) { h.hidden = !n; h.textContent = `ボックス ${n}匹`; }
+  }
+
+  // ---------- sheets (menu, box, bulk registration, transfer code) ----------
+  const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function openSheet(id) {
+    document.querySelectorAll('dialog[open]').forEach((d) => { if (d.id !== id) d.close(); });
+    const d = $(id);
+    if (!d.open) d.showModal();
+    document.documentElement.classList.add('modal-open');
+    if (id === 'menu') $('menuBtn').setAttribute('aria-expanded', 'true');
+  }
+  function closeSheet(id) {
+    const d = $(id);
+    if (d && d.open) d.close();
+  }
+  document.querySelectorAll('dialog').forEach((d) => {
+    d.addEventListener('close', () => {
+      if (!document.querySelector('dialog[open]')) document.documentElement.classList.remove('modal-open');
+      if (d.id === 'menu') $('menuBtn').setAttribute('aria-expanded', 'false');
+    });
+    // a tap on the backdrop (outside the panel) closes the menu
+    d.addEventListener('click', (e) => { if (e.target === d && d.id === 'menu') d.close(); });
+  });
+
+  // ---------- box view ----------
+  const RANKS = ['増田', 'SS', 'S', 'A', 'B', 'C', 'D'];
+  const TYPE_FILTER = [['', 'すべて'], ['B', 'きのみ'], ['I', '食材'], ['S', 'スキル'], ['A', 'オール']];
+  function boxRows() {
+    const dexIdx = new Map(PSE.SPECIES.map((s, i) => [s.en, i]));
+    return boxAll().map((o) => {
+      const sp = speciesOf(o.sp);
+      if (!sp) return null;
+      const ind = deserialize(o);
+      const ev = ind ? withSettings(ind) : null;
+      return { o, sp, ind, as: ev ? ev.sp : sp, dex: dexIdx.get(o.sp) ?? 9999 };
+    }).filter(Boolean);
+  }
+  function subChips(o) {
+    return (o.s || []).map((k, i) => {
+      const s = k && PSE.SUB_BY_K[k];
+      if (!s) return '<i class="bx-sub none">？</i>';
+      const off = o.lv < PSE.UNLOCK[i];
+      return `<i class="bx-sub ${s.r}${off ? ' off' : ''}" title="Lv${PSE.UNLOCK[i]} ${esc(s.ja)}${off ? '（まだ開いていない）' : ''}">${esc(SUB_SHORT[k] || s.ja)}</i>`;
+    }).join('');
+  }
+  function renderBox() {
+    regradeList(BKEY);
+    const ui = state.boxUi;
+    const rows = boxRows();
+    $('boxCount').textContent = `${rows.length}匹`;
+    // controls
+    const types = TYPE_FILTER.filter(([k]) => !k || k !== 'A' || rows.some((r) => r.as.spec === 'A'));
+    $('boxType').innerHTML = types.map(([k, t]) => `<button type="button" data-btype="${k}" aria-pressed="${ui.type === k}">${t}</button>`).join('');
+    $('boxSort').value = ui.sort;
+    const q = norm($('boxSearch').value).toLowerCase();
+    let list = rows.filter((r) => (!ui.type || r.as.spec === ui.type)
+      && (!q || norm(r.sp.ja).includes(q) || norm(r.as.ja).includes(q) || norm(r.o.d).toLowerCase().includes(q)));
+    const counts = Object.fromEntries(RANKS.map((k) => [k, list.filter((r) => r.o.g === k).length]));
+    $('boxRanks').innerHTML = RANKS.filter((k) => counts[k] || ui.rank === k).map((k) => `<button type="button" class="rk-chip" data-g="${rankKey(k)}" data-brank="${k}" aria-pressed="${ui.rank === k}"><b>${k}</b>${counts[k]}</button>`).join('');
+    if (ui.rank) list = list.filter((r) => r.o.g === ui.rank);
+    const byPct = (a, b) => (b.o.p ?? -1) - (a.o.p ?? -1);
+    const sorters = {
+      ideal: (a, b) => byPct(a, b) || b.o.lv - a.o.lv || (b.o.a || b.o.t) - (a.o.a || a.o.t),
+      new: (a, b) => (b.o.a || b.o.t) - (a.o.a || a.o.t),
+      dex: (a, b) => a.dex - b.dex || byPct(a, b),
+      level: (a, b) => b.o.lv - a.o.lv || byPct(a, b),
+    };
+    list.sort(sorters[ui.sort] || sorters.ideal);
+    if (!rows.length) {
+      $('boxList').innerHTML = `<div class="bx-empty">
+        <p><b>ボックスはまだ空です。</b></p>
+        <p>詳細画面のスクショを何枚かまとめて選ぶと、1枚ずつ読み取ってここに入れます。チェックした個体を「ボックスに入れる」で1匹ずつ足すこともできます。</p>
+        <button type="button" class="btn btn-moon" data-go="bulk">まとめて登録する</button>
+      </div>`;
+      return;
+    }
+    if (!list.length) { $('boxList').innerHTML = '<p class="bx-empty">条件に合う個体がありません。</p>'; return; }
+    $('boxList').innerHTML = `<p class="bx-note">ランクと％は Lv60 のとき（${state.evolve ? '進化前は最終進化の姿' : 'いまの姿'}）の理想個体比です。</p>` + list.map((r) => {
+      const o = r.o;
+      const g = o.g || '';
+      const p = o.p != null ? o.p : null;
+      const nat = PSE.NATURE_BY_JA[o.n] || PSE.NEUTRAL;
+      const evo = r.as !== r.sp ? `<small class="bx-evo">→${esc(r.as.ja)}で評価</small>` : '';
+      const nick = o.d && norm(o.d) !== norm(r.sp.ja) && !norm(o.d).startsWith(norm(r.sp.ja)) ? `<small class="bx-nick">${esc(o.d)}</small>` : '';
+      const chk = o.ck ? '<small class="bx-check">要確認</small>' : '';
+      return `<div class="bx-item">
+        <button type="button" class="bx-open" data-box="${esc(o.id)}">
+          <span class="bx-medal" data-g="${rankKey(g)}" style="--fill:${Math.max(0, Math.min(100, p || 0))}"><span class="${g.length > 1 ? 'two' : ''}">${esc(g || '–')}</span></span>
+          <span class="bx-text">
+            <span class="bx-name"><b>${esc(r.sp.ja)}</b><span class="bx-lv num">Lv.${o.lv}</span>${evo}${nick}${chk}</span>
+            <span class="bx-nature">${esc(nat.ja)}<small>${natureLabel(nat)}</small></span>
+            <span class="bx-subs">${subChips(o)}</span>
+          </span>
+          <span class="bx-pct num">${p != null ? `${p.toFixed(1)}<small>%</small>` : '—'}</span>
+        </button>
+        <button type="button" class="bx-del" data-boxdel="${esc(o.id)}" aria-label="${esc(r.sp.ja)} Lv.${o.lv}をボックスから外す">×</button>
+      </div>`;
+    }).join('');
+  }
+  function saveBoxUi() { store.set(BUKEY, state.boxUi); }
+  function openBoxItem(id) {
+    const o = boxAll().find((x) => x.id === id);
+    const ind = o && deserialize(o);
+    if (!ind) return;
+    state.ind = ind; state.flags = {}; state.source = 'box'; state.autoFix = null; state.historyT = null; state.boxId = id;
+    state.pending = null; state.speciesCands = null;
+    state.evalLevel = ind.level >= 60 ? 70 : 60;
+    closeSheet('boxView'); closeSheet('bulkView');
+    fillEditor(); renderAll();
+    setStatus(o.ck
+      ? `ボックスの${esc(ind.sp.ja)} Lv.${ind.level}です。読み取りに不確かなところがあった個体なので、「読み取り結果を直す」で確かめてください（直すとボックスにも反映します）。`
+      : `ボックスの${esc(ind.sp.ja)} Lv.${ind.level}を表示しています。直すとボックスにも反映します。`, o.ck ? '' : 'ok');
+    if (o.ck) $('editor').open = true;
+    $('cardSpecimen').scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' });
+  }
+  // the box status of the individual on screen, under its name
+  function boxActionHtml() {
+    if (state.source === 'sample' || !state.ind.sp || !state.ind.sp.supported) return '';
+    const linked = boxLinked();
+    if (linked && linked.ck) {
+      return '<div class="box-act"><span class="box-in warn">ボックスに入っています（要確認）</span><button type="button" class="btn btn-small" id="boxChecked">確かめた</button></div>';
+    }
+    if (linked) {
+      return '<div class="box-act"><span class="box-in">ボックスに入っています</span><button type="button" class="btn btn-small" data-go="box">ボックスを見る</button></div>';
+    }
+    state.boxId = null;
+    const hit = boxFind(state.ind);
+    if (hit) {
+      return `<div class="box-act"><span class="box-in">ボックスに同じ個体（Lv.${hit.lv}）があります</span><button type="button" class="btn btn-small" id="boxUpdate" data-id="${esc(hit.id)}">この内容で更新</button></div>`;
+    }
+    return '<div class="box-act"><button type="button" class="btn btn-small btn-accent" id="boxAdd">＋ ボックスに入れる</button></div>';
+  }
+  const currentCheck = () => needsCheck(state.ind, Object.keys(state.flags || {}).filter((k) => !/^ing/.test(k) || state.ind.level >= [1, 30, 60][+k.slice(3)]).length);
 
   // ---------- on-device reading (OCR) ----------
   function setStatus(html, tone, spinning) {
@@ -1353,7 +1560,12 @@
     const r = buildFromReading(data);
     finishReading(r.ind, r.flags, data);
   }
-  function finishReading(read, flags, data) {
+  // A reading -> the individual it most likely is. Nothing on screen changes (used by single and bulk reading).
+  // preset: the individual and flags already built from the reading.
+  function resolveData(data, preset) {
+    if (!data || !data.isDetailScreen) return { error: 'screen' };
+    let read, flags;
+    if (preset) { read = preset.ind; flags = preset.flags; } else { const b = buildFromReading(data); read = b.ind; flags = b.flags; }
     let ind = Object.assign({}, read);
     let autoFix = null;
     let res = resolveReading(ind, flags, data);
@@ -1368,16 +1580,8 @@
       ind = res.ind;
       flags = res.flags;
     }
-    state.speciesCands = res && res.speciesCands ? res.speciesCands : null;
-    if (!ind.sp) {
-      state.pending = { ind, flags, data };
-      setStatus('ポケモンの種類を特定できませんでした。下の「読み取り結果を直す・手入力する」でポケモンを選ぶと、読み取った内容で評価します。', 'error');
-      $('editor').open = true;
-      $('inSpecies').value = '';
-      $('inSpecies').focus();
-      return;
-    }
-    state.pending = null;
+    const speciesCands = res && res.speciesCands ? res.speciesCands : null;
+    if (!ind.sp) return { error: 'species', ind, flags };
     if (!res && ind.sp.supported) {
       const chk = runCheck(withSettings(ind, false));
       if (chk && chk.spOk === false && chk.suggestions.length === 1) {
@@ -1387,23 +1591,50 @@
       }
     }
     if (ind.sp.supported) checkCarry(ind, flags);
-    state.flags = flags;
+    const unsure = Object.keys(flags).filter((k) => !/^ing/.test(k) || ind.level >= [1, 30, 60][+k.slice(3)]).length;
+    return { ind, flags, autoFix, speciesCands, unsure, spOk: ind.spShown ? spMatches(ind) : null };
+  }
+  function finishReading(read, flags, data) {
+    const r = resolveData(data, { ind: read, flags });
+    state.speciesCands = r.speciesCands || null;
+    if (r.error === 'species') {
+      state.pending = { ind: r.ind, flags: r.flags, data };
+      setStatus('ポケモンの種類を特定できませんでした。下の「読み取り結果を直す・手入力する」でポケモンを選ぶと、読み取った内容で評価します。', 'error');
+      $('editor').open = true;
+      $('inSpecies').value = '';
+      $('inSpecies').focus();
+      return;
+    }
+    state.pending = null;
+    const ind = r.ind;
+    state.flags = r.flags;
     state.ind = ind;
     state.source = 'ocr';
-    state.autoFix = autoFix;
+    state.autoFix = r.autoFix;
     state.evalLevel = ind.level >= 60 ? 70 : 60;
-    const unsure = Object.keys(flags).filter((k) => !/^ing/.test(k) || ind.level >= [1, 30, 60][+k.slice(3)]).length;
-    const spNote = ind.spShown ? (spMatches(ind) ? 'SPも計算と一致しました。' : 'SPが計算と合いません。下の「読み取りチェック」を見てください。') : 'SPが読めなかったので、照合はしていません。';
+    // the same individual already in the box: keep its entry up to date
+    state.boxId = null;
+    let boxNote = '';
+    if (ind.sp.supported) {
+      const hit = boxFind(ind);
+      if (hit && ind.level >= hit.lv) {
+        state.boxId = boxUpsert(ind, { ck: needsCheck(ind, r.unsure) }, hit.id).id;
+        boxNote = 'ボックスの同じ個体も更新しました。';
+      } else if (hit) {
+        boxNote = `ボックスには同じ個体のLv.${hit.lv}のデータがあります。`;
+      }
+    }
+    const spNote = r.spOk === null ? 'SPが読めなかったので、照合はしていません。' : r.spOk ? 'SPも計算と一致しました。' : 'SPが計算と合いません。下の「読み取りチェック」を見てください。';
     const candNote = state.speciesCands ? `ポケモンは ${state.speciesCands.map((x) => x.ja).join('・')} のどれかで、数値だけでは区別できません。違うときは選び直してください。` : '';
-    const note = state.readNote || '';
+    const note = (state.readNote || '') + boxNote;
     state.readNote = '';
-    setStatus(unsure
-      ? `読み取りました。${spNote}${candNote}確認してほしい項目が${unsure}つあります（「読み取り結果を直す」のオレンジ色の欄）。${note}`
+    setStatus(r.unsure
+      ? `読み取りました。${spNote}${candNote}確認してほしい項目が${r.unsure}つあります（「読み取り結果を直す」のオレンジ色の欄）。${note}`
       : `読み取りました。${spNote}${note}`, 'ok');
     fillEditor();
     state.historyT = ind.sp.supported ? saveHistory(ind) : null;
     renderAll();
-    $('cardVerdict').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    $('cardVerdict').scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
   }
 
   // Two screenshots belong together (top and bottom of one Pokémon's screen) unless what both show disagrees:
@@ -1422,9 +1653,23 @@
     return true;
   }
 
+  // what the reader is doing, for a progress line: { stage, pct } or null (nothing worth showing)
+  function ocrStage(m, which) {
+    const st = String(m.status || '');
+    if (st === 'pass') return { stage: `${which}読み取り中…（${m.pass}/${m.total}）`, pct: null };
+    if (st === 'counts') return { stage: `${which}食材の個数を確認中…`, pct: null };
+    if (m.eng && st.includes('loading language traineddata')) return { stage: '数字データを読み込み中…', pct: m.progress };
+    if (m.eng) return null;
+    if (st.includes('loading tesseract core')) return { stage: '読み取りの準備中（初回だけ約9MBを読み込みます）…', pct: m.progress };
+    if (st.includes('loading language traineddata')) return { stage: '日本語データを読み込み中…', pct: m.progress };
+    if (st.includes('recognizing text')) return { stage: null, pct: m.progress };
+    return null;
+  }
+
   let reading = false, readAgain = false;
   async function startReading() {
     if (!state.files.length) return;
+    if (bulk.running) { setStatus('まとめて登録の途中です。終わってからもう一度選んでください。', 'error'); return; }
     if (reading) { readAgain = true; return; }
     reading = true;
     let stage = '読み取りの準備中…', pct = null;
@@ -1438,15 +1683,10 @@
         todo[i].result = await OCR.read(todo[i].file, {
           vocab: OCR_VOCAB,
           onProgress: (m) => {
-            const st = String(m.status || '');
-            if (st === 'pass') { stage = `${which}読み取り中…（${m.pass}/${m.total}）`; pct = null; }
-            else if (st === 'counts') { stage = `${which}食材の個数を確認中…`; pct = null; }
-            else if (m.eng && st.includes('loading language traineddata')) { stage = '数字データを読み込み中…'; pct = m.progress; }
-            else if (m.eng) return;
-            else if (st.includes('loading tesseract core')) { stage = '読み取りの準備中（初回だけ約9MBを読み込みます）…'; pct = m.progress; }
-            else if (st.includes('loading language traineddata')) { stage = '日本語データを読み込み中…'; pct = m.progress; }
-            else if (st.includes('recognizing text')) pct = m.progress;
-            else return;
+            const s = ocrStage(m, which);
+            if (!s) return;
+            if (s.stage) stage = s.stage;
+            pct = s.pct;
             paint();
           },
         });
@@ -1472,6 +1712,275 @@
     }
   }
 
+  // ---------- bulk registration: many screenshots, one individual each, into the box ----------
+  const bulk = { running: false, stop: false, rows: [], cur: -1, stage: '', pct: null, lock: null };
+  const BULK_MARK = { ok: '✓', check: '!', fail: '×', merged: '↓', wait: '', reading: '' };
+  function bulkRowHtml(r) {
+    const open = !bulk.running && (r.state === 'ok' || r.state === 'check') && r.id;
+    const body = `<span class="bk-no num">${r.k + 1}</span>
+      <span class="bk-text">${r.state === 'reading' ? '<span class="spinner dark" aria-hidden="true"></span>' : ''}${r.html || '<span class="bk-wait">待っています</span>'}</span>
+      <span class="bk-mark" aria-hidden="true">${BULK_MARK[r.state] || ''}</span>`;
+    return open
+      ? `<button type="button" class="bk-row" data-state="${r.state}" data-box="${esc(r.id)}">${body}</button>`
+      : `<div class="bk-row" data-state="${r.state}">${body}</div>`;
+  }
+  function bulkSummary() {
+    const rows = bulk.rows;
+    const n = (f) => rows.filter(f).length;
+    const added = n((r) => (r.state === 'ok' || r.state === 'check') && r.status === 'new');
+    const updated = n((r) => (r.state === 'ok' || r.state === 'check') && r.status === 'updated');
+    const kept = n((r) => (r.state === 'ok' || r.state === 'check') && r.status === 'kept');
+    const check = n((r) => r.state === 'check');
+    const fail = n((r) => r.state === 'fail');
+    const read = n((r) => r.state !== 'wait' && r.state !== 'reading');
+    const parts = [`${read}枚を読み取りました。`];
+    const box = [added && `新しく${added}匹`, updated && `更新${updated}匹`].filter(Boolean).join('・');
+    parts.push(box ? `ボックスに${box}。` : 'ボックスに入った個体はありません。');
+    if (kept) parts.push(`${kept}匹は、ボックスの方が新しいデータでした。`);
+    if (check) parts.push(`<b>確認が必要な個体が${check}匹</b>あります（!の行）。タップして直してください。`);
+    if (fail) parts.push(`${fail}枚は読み取れませんでした。`);
+    return parts.join('');
+  }
+  function renderBulk() {
+    const total = bulk.rows.length;
+    $('bulkRun').hidden = !total;
+    $('bulkPick').hidden = bulk.running;
+    if (!total) { $('bulkList').innerHTML = ''; return; }
+    const done = bulk.rows.filter((r) => r.state !== 'wait' && r.state !== 'reading').length;
+    $('bulkHead').innerHTML = bulk.running
+      ? `<b class="num">${Math.min(done + 1, total)} / ${total}枚</b><span>${esc(bulk.stop ? '止めています…（この1枚が終わったら止まります）' : (bulk.stage || '読み取り中…') + (bulk.pct != null ? ` ${Math.round(bulk.pct * 100)}%` : ''))}</span>`
+      : `<span>${bulkSummary()}</span>`;
+    $('bulkBar').style.width = `${(done / total) * 100}%`;
+    $('bulkStop').hidden = !bulk.running;
+    $('bulkDone').hidden = bulk.running;
+    $('bulkList').innerHTML = bulk.rows.map(bulkRowHtml).join('');
+  }
+  function bulkResultHtml(r, how) {
+    const ind = r.ind;
+    const g = gradeOf(ind);
+    const grade = g ? `<b class="bk-g" data-g="${rankKey(g.rank)}">${esc(g.rank)}</b> ${(Math.round(g.pct * 10) / 10).toFixed(1)}%` : '';
+    const what = { new: '新しく入れました', updated: 'ボックスの個体を更新しました', kept: 'ボックスの方が新しいデータです' }[how] || '';
+    const why = r.spOk === false ? 'SPが計算と合いません' : r.unsure ? `確かめてほしい項目が${r.unsure}つ` : '';
+    return `<b>${esc(ind.sp.ja)}</b> <span class="num">Lv.${ind.level}</span> ${grade}<small>${what}${why ? `・${why}` : ''}</small>`;
+  }
+  async function keepAwake(on) {
+    try {
+      if (on && !bulk.lock && navigator.wakeLock && document.visibilityState === 'visible') bulk.lock = await navigator.wakeLock.request('screen');
+      if (!on && bulk.lock) { await bulk.lock.release(); bulk.lock = null; }
+    } catch { bulk.lock = null; }
+  }
+  document.addEventListener('visibilitychange', () => { if (bulk.running && document.visibilityState === 'visible') { bulk.lock = null; keepAwake(true); } });
+  async function runBulk(files) {
+    const imgs = [...files].filter((f) => f && /^image\//.test(f.type || 'image/'));
+    if (!imgs.length) return;
+    renderMenuCount();
+    openSheet('bulkView');
+    if (bulk.running) return;
+    if (reading) { bulk.rows = []; renderBulk(); $('bulkNote').textContent = 'いま1匹ぶんを読み取り中です。終わってからもう一度選んでください。'; return; }
+    $('bulkNote').textContent = '';
+    bulk.running = true; bulk.stop = false; bulk.stage = '読み取りの準備中…'; bulk.pct = null;
+    bulk.rows = imgs.map((f, k) => ({ k, state: 'wait', html: '' }));
+    renderBulk();
+    keepAwake(true);
+    // the previous screenshot's reading: its other half may come next
+    let prev = null;
+    try {
+      for (let k = 0; k < imgs.length; k++) {
+        if (bulk.stop) break;
+        const row = bulk.rows[k];
+        row.state = 'reading'; bulk.stage = '読み取り中…'; bulk.pct = null;
+        renderBulk();
+        let data = null;
+        try {
+          data = await OCR.read(imgs[k], {
+            vocab: OCR_VOCAB,
+            onProgress: (m) => {
+              const s = ocrStage(m, '');
+              if (!s) return;
+              if (s.stage) bulk.stage = s.stage;
+              bulk.pct = s.pct;
+              const head = $('bulkHead');
+              if (head && head.lastElementChild) head.lastElementChild.textContent = bulk.stop ? '止めています…（この1枚が終わったら止まります）' : bulk.stage + (bulk.pct != null ? ` ${Math.round(bulk.pct * 100)}%` : '');
+            },
+          });
+        } catch (e) { console.error(e); data = null; }
+        if (!data || !data.isDetailScreen) {
+          Object.assign(row, { state: 'fail', html: data ? 'ポケモンの詳細画面ではありませんでした' : '読み取りに失敗しました' });
+          prev = null;
+          renderBulk();
+          continue;
+        }
+        // top and bottom halves of one screen: read together when that reproduces the SP on screen
+        let r = resolveData(data);
+        let merged = false;
+        if (prev && sameIndividual(prev.data, data)) {
+          const m = OCRParse.merge([data, prev.data]);
+          const rm = resolveData(m);
+          if (!rm.error && rm.spOk === true && r.spOk !== true) { r = rm; data = m; merged = true; }
+        }
+        if (merged) {
+          const pr = bulk.rows[prev.k];
+          // the entry made from the first half alone is replaced by the whole reading
+          if (pr.id && pr.status === 'new') boxRemove(pr.id);
+          Object.assign(pr, { state: 'merged', html: '次のスクショと合わせて1匹ぶんとして読み取りました', id: null });
+        }
+        if (r.error || !r.ind.sp.supported) {
+          Object.assign(row, { state: 'fail', html: r.error ? 'ポケモンの種類を特定できませんでした' : `${esc(r.ind.sp.ja)}はまだ評価できません` });
+          prev = { data, k };
+          renderBulk();
+          continue;
+        }
+        const ck = needsCheck(r.ind, r.unsure);
+        const u = boxUpsert(r.ind, { ck });
+        Object.assign(row, { state: ck ? 'check' : 'ok', id: u.id, status: u.status, html: bulkResultHtml(r, u.status) + (merged ? '<small>（前のスクショと合わせて読み取り）</small>' : '') });
+        prev = { data, k };
+        renderBulk();
+      }
+    } finally {
+      bulk.rows.forEach((r) => { if (r.state === 'reading' || r.state === 'wait') { r.state = 'wait'; r.html = bulk.stop ? '止めたので読み取っていません' : ''; } });
+      bulk.running = false;
+      bulk.stop = false;
+      keepAwake(false);
+      renderBulk();
+      renderMenuCount();
+      if ($('boxView').open) renderBox();
+    }
+  }
+  function askStopBulk() {
+    if (!bulk.running) return true;
+    if (!confirm('まとめて登録を止めますか？ ここまでに読み取った個体はボックスに入っています。')) return false;
+    bulk.stop = true;
+    renderBulk();
+    return false;
+  }
+
+  // ---------- transfer code: the box as text, to move it to another device ----------
+  function b64url(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function unb64url(str) {
+    let s = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  const pipeBytes = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+  // only known fields with sane values are kept from a code (it is text from outside)
+  function cleanItem(o) {
+    if (!o || typeof o !== 'object' || typeof o.sp !== 'string' || !speciesOf(o.sp)) return null;
+    const int = (v, lo, hi) => (Number.isInteger(v) && v >= lo && v <= hi ? v : null);
+    const lv = int(o.lv, 1, 100);
+    if (!lv || typeof o.n !== 'string' || !PSE.NATURE_BY_JA[o.n]) return null;
+    const s = Array.from({ length: 5 }, (_, i) => (Array.isArray(o.s) && typeof o.s[i] === 'string' && PSE.SUB_BY_K[o.s[i]] ? o.s[i] : null));
+    const i3 = Array.from({ length: 3 }, (_, i) => {
+      const v = Array.isArray(o.i) ? o.i[i] : null;
+      return Array.isArray(v) && typeof v[0] === 'string' && PSE.ING_STRENGTH[v[0]] !== undefined && int(v[1], 1, 99) ? [v[0], v[1]] : null;
+    });
+    const now = Date.now();
+    const time = (v) => (Number.isFinite(v) && v > 1.6e12 && v < now + 864e5 ? v : null);
+    return {
+      t: time(o.t) || now, a: time(o.a) || time(o.t) || now, sp: o.sp, lv, n: o.n, s, sk: int(o.sk, 1, 8) || 1, i: i3,
+      spv: int(o.spv, 1, 99999), ht: int(o.ht, 1, 99999), c: int(o.c, 1, 999), r: int(o.r, 0, 4) || 0,
+      d: typeof o.d === 'string' ? o.d.slice(0, 40) : '', ck: o.ck === true, id: typeof o.id === 'string' && /^b[0-9a-z]{4,20}$/.test(o.id) ? o.id : null,
+      g: '', p: null, gs: '',
+    };
+  }
+  async function encodeBox(items) {
+    const slim = items.map((o) => { const x = Object.assign({}, o); delete x.g; delete x.p; delete x.gs; return x; });
+    let bytes = new TextEncoder().encode(JSON.stringify({ v: 1, at: Date.now(), box: slim }));
+    let ver = '0';
+    if (typeof CompressionStream === 'function') {
+      try { bytes = await pipeBytes(bytes, new CompressionStream('deflate-raw')); ver = '1'; } catch { ver = '0'; bytes = new TextEncoder().encode(JSON.stringify({ v: 1, at: Date.now(), box: slim })); }
+    }
+    return `PSB${ver}.${b64url(bytes)}`;
+  }
+  async function decodeBox(text) {
+    const m = String(text || '').replace(/\s+/g, '').match(/PSB([01])\.([A-Za-z0-9_-]+)/);
+    if (!m) throw new Error('format');
+    let bytes = unb64url(m[2]);
+    if (m[1] === '1') {
+      if (typeof DecompressionStream !== 'function') throw new Error('unsupported');
+      bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
+    }
+    const obj = JSON.parse(new TextDecoder().decode(bytes));
+    if (!obj || !Array.isArray(obj.box)) throw new Error('format');
+    return obj.box.map(cleanItem).filter(Boolean);
+  }
+  // what reading a code would do: { list, added, updated, same }
+  function planImport(items, replace) {
+    const list = replace ? [] : boxAll().slice();
+    let added = 0, updated = 0, same = 0;
+    for (const it of items) {
+      const key = boxKey(it);
+      const i = list.findIndex((x) => boxKey(x) === key);
+      if (i >= 0) {
+        const old = list[i];
+        if (it.lv > old.lv || (it.lv === old.lv && it.t > old.t)) { list[i] = Object.assign({}, it, { id: old.id, a: Math.min(old.a || old.t, it.a) }); updated++; } else same++;
+      } else {
+        list.push(Object.assign({}, it, { id: it.id && !list.some((x) => x.id === it.id) ? it.id : newBoxId() }));
+        added++;
+      }
+    }
+    return { list, added, updated, same };
+  }
+  const transfer = { items: null };
+  function renderTransfer() {
+    const n = boxAll().length;
+    $('exportInfo').textContent = n ? `このiPhoneのボックスの${n}匹をコードにします。` : 'ボックスに個体がないので、書き出すものがありません。';
+    $('exportMake').disabled = !n;
+    $('exportOut').hidden = true;
+    $('importOut').hidden = true;
+    $('importMsg').textContent = '';
+    transfer.items = null;
+  }
+  async function checkImport() {
+    $('importOut').hidden = true;
+    transfer.items = null;
+    const text = $('importCode').value;
+    if (!text.trim()) { $('importMsg').textContent = 'コードを貼り付けてください。'; return; }
+    let items;
+    try { items = await decodeBox(text); } catch (e) {
+      $('importMsg').textContent = e.message === 'unsupported'
+        ? 'このブラウザでは読み込めない形式です。iOSを新しくするか、別のブラウザで開いてください。'
+        : 'コードを読み取れませんでした。最初の「PSB」から最後まで、全部をコピーできているか確かめてください。';
+      return;
+    }
+    if (!items.length) { $('importMsg').textContent = 'コードの中に個体がありませんでした。'; return; }
+    transfer.items = items;
+    const plan = planImport(items, false);
+    $('importInfo').innerHTML = `コードの中身: <b>${items.length}匹</b>（このボックスにない個体 ${plan.added}・同じ個体 ${plan.updated + plan.same}）`;
+    $('importMsg').textContent = '';
+    $('importOut').hidden = false;
+  }
+  function applyImport(replace) {
+    if (!transfer.items) return;
+    if (replace && boxAll().length && !confirm(`いまのボックス（${boxAll().length}匹）を消して、コードの${transfer.items.length}匹に置き換えますか？`)) return;
+    const plan = planImport(transfer.items, replace);
+    plan.list.forEach((x) => { x.gs = ''; });
+    boxPut(plan.list);
+    regradeList(BKEY);
+    renderMenuCount();
+    $('importOut').hidden = true;
+    transfer.items = null;
+    $('importCode').value = '';
+    $('importMsg').textContent = replace
+      ? `ボックスをコードの${plan.list.length}匹に置き換えました。`
+      : `${plan.added}匹を追加し、${plan.updated}匹を新しいデータに更新しました。`;
+    $('exportInfo').textContent = `このiPhoneのボックスの${boxAll().length}匹をコードにします。`;
+    $('exportMake').disabled = !boxAll().length;
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back */ }
+    const ta = $('exportCode');
+    ta.focus(); ta.select();
+    try { return document.execCommand('copy'); } catch { return false; }
+  }
+  const stamp = () => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
+
   // ---------- files ----------
   function renderThumbs() {
     $('thumbs').innerHTML = state.files.map((x, i) => `<div class="thumb"><img src="${x.url}" alt="スクショ${i + 1}"><button type="button" data-rm="${i}" aria-label="スクショ${i + 1}を外す">×</button></div>`).join('');
@@ -1480,6 +1989,8 @@
   function addFiles(list) {
     const imgs = [...list].filter((f) => f && /^image\//.test(f.type || 'image/'));
     if (!imgs.length) return;
+    // four or more at once: one individual each, into the box
+    if (imgs.length > 3) { runBulk(imgs); return; }
     for (const f of imgs) state.files.push({ file: f, url: URL.createObjectURL(f) });
     while (state.files.length > 3) { const x = state.files.shift(); URL.revokeObjectURL(x.url); }
     renderThumbs();
@@ -1500,6 +2011,76 @@
   document.addEventListener('click', (e) => {
     const t = e.target.closest('button');
     if (!t) return;
+    // ---- menu, box, bulk registration, transfer code ----
+    if (t.id === 'menuBtn') { renderMenuCount(); openSheet('menu'); return; }
+    if (t.dataset.close != null) {
+      const d = t.closest('dialog');
+      if (d && d.id === 'bulkView' && !askStopBulk()) return;
+      if (d) d.close();
+      return;
+    }
+    if (t.dataset.go) {
+      const go = t.dataset.go;
+      if (go === 'box') { renderBox(); openSheet('boxView'); }
+      else if (go === 'bulk') { renderBulk(); openSheet('bulkView'); }
+      else if (go === 'transfer') { renderTransfer(); openSheet('transferView'); }
+      else if (go === 'method') { closeSheet('menu'); $('method').open = true; $('method').scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' }); }
+      return;
+    }
+    if (t.dataset.box) { openBoxItem(t.dataset.box); return; }
+    if (t.dataset.boxdel) {
+      const o = boxAll().find((x) => x.id === t.dataset.boxdel);
+      const sp = o && speciesOf(o.sp);
+      if (o && confirm(`${sp ? sp.ja : o.sp} Lv.${o.lv}（${o.n}）をボックスから外しますか？`)) { boxRemove(o.id); renderBox(); renderAll(); }
+      return;
+    }
+    if (t.dataset.btype != null) { state.boxUi.type = t.dataset.btype; state.boxUi.rank = ''; saveBoxUi(); renderBox(); return; }
+    if (t.dataset.brank != null) { state.boxUi.rank = state.boxUi.rank === t.dataset.brank ? '' : t.dataset.brank; saveBoxUi(); renderBox(); return; }
+    if (t.id === 'boxAdd' || t.id === 'boxUpdate') {
+      if (!state.ind.sp || !state.ind.sp.supported) return;
+      state.boxId = boxUpsert(state.ind, { ck: currentCheck() }, t.id === 'boxUpdate' ? t.dataset.id : undefined).id;
+      renderAll();
+      return;
+    }
+    if (t.id === 'boxChecked') {
+      const list = boxAll();
+      const o = list.find((x) => x.id === state.boxId);
+      if (o) { o.ck = false; boxPut(list); }
+      renderAll();
+      return;
+    }
+    if (t.id === 'bulkStop') { askStopBulk(); return; }
+    if (t.id === 'exportMake') {
+      t.disabled = true;
+      encodeBox(boxAll()).then((code) => {
+        $('exportCode').value = code;
+        $('exportOut').hidden = false;
+        $('exportShare').hidden = !navigator.share;
+        $('exportMsg').textContent = `${boxAll().length}匹ぶん・${code.length.toLocaleString('ja-JP')}文字のコードです。`;
+      }).catch(() => { $('exportMsg').textContent = 'コードを作れませんでした。'; $('exportOut').hidden = false; })
+        .finally(() => { t.disabled = false; });
+      return;
+    }
+    if (t.id === 'exportCopy') {
+      copyText($('exportCode').value).then((ok) => { $('exportMsg').textContent = ok ? 'コピーしました。もう1台の「引き継ぎコード」→「読み込む」に貼り付けてください。' : 'コピーできませんでした。コードを長押しして全部選び、コピーしてください。'; });
+      return;
+    }
+    if (t.id === 'exportShare') {
+      navigator.share({ title: 'ポケスリ個体チェッカーのボックス', text: $('exportCode').value }).catch(() => {});
+      return;
+    }
+    if (t.id === 'exportSave') {
+      const blob = new Blob([$('exportCode').value + '\n'], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `pokesleep-box-${stamp()}.txt`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      return;
+    }
+    if (t.id === 'importCheck') { checkImport(); return; }
+    if (t.id === 'importMerge') { applyImport(false); return; }
+    if (t.id === 'importReplace') { applyImport(true); return; }
     if (t.dataset.rm != null) {
       const [x] = state.files.splice(+t.dataset.rm, 1);
       if (x) URL.revokeObjectURL(x.url);
@@ -1542,7 +2123,7 @@
       const o = store.get(HKEY, [])[+t.dataset.h];
       const ind = o && deserialize(o);
       if (ind) {
-        state.ind = ind; state.flags = {}; state.source = 'history'; state.autoFix = null; state.historyT = o.t;
+        state.ind = ind; state.flags = {}; state.source = 'history'; state.autoFix = null; state.historyT = o.t; state.boxId = null;
         state.evalLevel = ind.level >= 60 ? 70 : 60;
         fillEditor(); renderAll();
         $('cardSpecimen').scrollIntoView({ block: 'start' });
@@ -1557,6 +2138,15 @@
     }
   });
   document.addEventListener('change', (e) => {
+    const id = e.target && e.target.id;
+    if (id === 'boxSort') { state.boxUi.sort = e.target.value; saveBoxUi(); renderBox(); return; }
+    if (id === 'bulkFile') { const f = e.target.files; runBulk(f); e.target.value = ''; return; }
+    if (id === 'importFile') {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (f) f.text().then((txt) => { $('importCode').value = txt.trim(); checkImport(); }).catch(() => { $('importMsg').textContent = 'ファイルを読めませんでした。'; });
+      return;
+    }
     if (e.target && e.target.id === 'evoPick') {
       const from = state.ind.sp;
       state.evoPick = Object.assign({}, state.evoPick, { [from.anc]: e.target.value });
@@ -1579,8 +2169,12 @@
     clearTimeout(afterEdit.t);
     afterEdit.t = setTimeout(() => {
       if ((state.source === 'ocr' || state.source === 'history') && state.historyT && state.ind.sp.supported) state.historyT = saveHistory(state.ind, state.historyT);
+      // an individual opened from the box (or linked to it) keeps its entry up to date
+      if (boxLinked() && state.ind.sp.supported) boxUpsert(state.ind, { ck: currentCheck() }, state.boxId);
     }, 800);
   }
+  $('boxSearch').addEventListener('input', () => renderBox());
+  $('bulkView').addEventListener('cancel', (e) => { if (bulk.running) { e.preventDefault(); askStopBulk(); } });
   $('form').addEventListener('change', (e) => {
     readEditor(e.target.id);
     afterEdit();
@@ -1610,9 +2204,11 @@
   })();
   buildEditorStatic();
   fillEditor();
+  regradeList(HKEY);
+  regradeList(BKEY);
   renderHistory();
+  renderMenuCount();
   renderAll();
-  setTimeout(regradeHistory, 1500);
 
   // home-screen install hint (iPhone Safari, not yet installed)
   const IKEY = 'pse:v1:installHintClosed';

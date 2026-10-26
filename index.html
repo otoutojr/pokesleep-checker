@@ -18,7 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=20261026-1">
+<link rel="stylesheet" href="assets/app.css?v=20261026-2">
 </head>
 <body>
 <header class="band">
@@ -26,6 +26,9 @@
     <div class="brand">
       <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path d="M19.5 3.2A12 12 0 1 0 26.8 19 9.5 9.5 0 0 1 19.5 3.2Z" fill="var(--moon)"/></svg>
       <h1>ポケスリ個体チェッカー</h1>
+      <button type="button" class="menu-btn" id="menuBtn" aria-label="メニュー" aria-haspopup="dialog" aria-controls="menu" aria-expanded="false">
+        <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M3.5 6h15M3.5 11h15M3.5 16h15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
     </div>
     <p class="lede">ポケモン詳細画面のスクショを入れるだけ。iPhoneの中で読み取って、理想個体の何%か（だいふくさん式のランク）と、1日に稼ぐエナジーを出します。</p>
     <div class="install" id="installHint" hidden>
@@ -37,7 +40,7 @@
       <span class="drop-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9.2" cy="9.4" r="1.8" fill="currentColor"/><path d="m5 17 4.6-4.6 3 3 2.4-2.4L20 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
       <span>
         <span class="drop-title" id="dropTitle">スクショを選ぶ</span>
-        <span class="drop-sub" id="dropSub">ポケモンの詳細画面を1〜3枚。名前・SPからサブスキル・せいかくまでが写っていればOK。上下2枚に分けても読めます。</span>
+        <span class="drop-sub" id="dropSub">ポケモンの詳細画面を1〜3枚。名前・SPからサブスキル・せいかくまでが写っていればOK。上下2枚に分けても読めます。4枚以上まとめて選ぶと、1匹ずつボックスに登録します。</span>
       </span>
     </label>
     <div class="intake-row">
@@ -115,7 +118,10 @@
   </details>
 
   <section class="card" id="cardHistory" aria-labelledby="hTitle">
-    <h2 class="card-title" id="hTitle">最近チェックした個体</h2>
+    <div class="h-head">
+      <h2 class="card-title" id="hTitle">最近チェックした個体</h2>
+      <button type="button" class="btn btn-small" id="hBox" data-go="box" hidden>ボックス</button>
+    </div>
     <div class="history" id="history"></div>
   </section>
 
@@ -138,6 +144,7 @@
         <li>SP・おてつだい時間・最大所持数の計算式とポケモンのデータは <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT License）、SPの式は <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX</a> の調査にもとづきます。画面のSPと計算が一致すれば、読み取りは正しいと判断できます。</li>
         <li>ムウマ・ムウマージ（2026年10月26日登場）のおてつだい時間・食材とスキルの確率・食材・最大所持数と、メインスキル「マジカルフレイム」の効果量（なべの容量 +7〜31・料理の大成功確率 +1〜5%）は、<a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX ポケスリ攻略ツール</a>のデータです（出典）。登場したばかりなので、確率はこれから少し変わることがあります。大成功確率が上がるぶんは、料理チャンスSと同じく1日のエナジーには入れていません。ランクの9分類は、ほかのスキルタイプと同じ⑨スキル得意で出しています。</li>
         <li>スクショの文字はiPhoneの中で読み取ります（Tesseract.js）。画像はどこにも送られず、保存もされません。読み取った個体の履歴は、このiPhoneのアプリの中にだけ保存されます。</li>
+        <li>ボックス（メニューから開く）は、読み取った個体をためておく場所で、このiPhoneのアプリの中にだけ保存されます。ポケスリ本体には外部と連携する機能がないので、ゲームのボックスを直接読み込むことはできません。同じポケモン（進化の前後を含む）・せいかく・サブスキル・食材の個体は同じ1匹として扱い、読み取り直すとレベルなどを新しくします。ほかの端末へは「引き継ぎコード」で移せます（コードには個体のデータだけが入ります）。</li>
         <li>読み間違いは、画面のSP・おてつだい時間と計算が一致するかで確かめて、1か所だけのズレなら自動で直します。ニックネームを付けたポケモンも、SPとおてつだい時間から種類を割り出します。食材は、アイコンの色の並びを19種類の食材アイコンと照らし合わせて見分け（鍵のかかった薄い表示にも対応）、「×4」などの個数と、解放済みの枠はSPでも確かめます。個数は、バッジの数字の形を×1〜×20と1つずつ照らし合わせて読みます（×10などの2けたも）。アイコンと個数が食い違ったときは、その枠をオレンジ色にします。アイコンが名前の欄に隠れて見えない枠は、個数とSPから割り出します。前に読んだのと別の個体のスクショを選ぶと、前のスクショは自動で外して、新しい1枚だけで読みます。</li>
       </ul>
       <div class="field">
@@ -160,13 +167,152 @@
   <p class="foot">データ更新: 2026年10月26日（ムウマ・ムウマージ、v3.9.0 のゲンガーの食材確率 16.6% まで。ゲーム内レベル上限 Lv70、サブスキル解放 Lv10/25/50/70/80）</p>
   <p class="legal">個人用の非公式ツールです。ポケモン・Pokémon Sleepは任天堂・クリーチャーズ・ゲームフリーク・ポケモンの登録商標です。<br>計算・データ: <a href="https://github.com/nitoyon/pokesleep-tool" target="_blank" rel="noopener">nitoyon/pokesleep-tool</a>（MIT）／ムウマ・ムウマージのデータ: <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX ポケスリ攻略ツール</a>／ランクの基準: <a href="https://www.pokemonsleepdaifuku.com/checker/" target="_blank" rel="noopener">だいふくさんの個体値チェッカー</a>の公開情報／文字認識: <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>（Apache-2.0）</p>
 </main>
-<script src="assets/data.js?v=20261026-1"></script>
-<script src="assets/nito.js?v=20261026-1"></script>
-<script src="assets/engine.js?v=20261026-1"></script>
-<script src="vendor/tesseract/tesseract.min.js?v=20261026-1"></script>
-<script src="assets/ocr-parse.js?v=20261026-1"></script>
-<script src="assets/ing-icons.js?v=20261026-1"></script>
-<script src="assets/ocr.js?v=20261026-1"></script>
-<script src="assets/app.js?v=20261026-1"></script>
+
+<dialog class="drawer" id="menu" aria-labelledby="menuTitle">
+  <div class="drawer-in">
+    <div class="drawer-head">
+      <h2 id="menuTitle">メニュー</h2>
+      <button type="button" class="icon-btn" data-close aria-label="メニューを閉じる"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <nav class="menu-list" aria-label="メニュー">
+      <button type="button" class="menu-item" data-go="box">
+        <span class="mi-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22"><path d="M3.5 7.5 11 4l7.5 3.5v8L11 19l-7.5-3.5Z M3.5 7.5 11 11l7.5-3.5M11 11v8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+        <span class="mi-t"><b>ボックス</b><small>読み取った個体を理想個体比の順に</small></span>
+        <span class="mi-n num" id="menuBoxCount">0匹</span>
+      </button>
+      <button type="button" class="menu-item" data-go="bulk">
+        <span class="mi-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22"><rect x="6.5" y="3.5" width="12" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 7v10.5a2 2 0 0 0 2 2h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12.5 8v6M9.5 11h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        <span class="mi-t"><b>まとめて登録</b><small>スクショを何枚でも一度に</small></span>
+      </button>
+      <button type="button" class="menu-item" data-go="transfer">
+        <span class="mi-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22"><path d="M4 8h12.5M13 4.5 16.5 8 13 11.5M18 14H5.5M9 10.5 5.5 14 9 17.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="mi-t"><b>引き継ぎコード</b><small>別のiPhoneに移す・バックアップ</small></span>
+      </button>
+      <button type="button" class="menu-item" data-go="method">
+        <span class="mi-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M11 10v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="11" cy="7.2" r="1.1" fill="currentColor"/></svg></span>
+        <span class="mi-t"><b>評価のしくみ・設定</b><small>ランクの出し方、睡眠スコアなど</small></span>
+      </button>
+    </nav>
+    <p class="drawer-foot">ボックスはこのiPhoneの中にだけ保存されます。ポケスリ本体のデータは外から読み込めないので、スクショから登録します。</p>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="boxView" aria-labelledby="boxTitle">
+  <div class="sheet-head">
+    <div class="sheet-bar">
+      <button type="button" class="icon-btn" data-close aria-label="ボックスを閉じる"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2 id="boxTitle">ボックス</h2>
+      <span class="sheet-count num" id="boxCount"></span>
+    </div>
+    <div class="box-tools">
+      <div class="box-tools-row">
+        <label class="sel-night"><span class="sr-only">並び順</span>
+          <select id="boxSort">
+            <option value="ideal">理想個体比が高い順</option>
+            <option value="new">最近入れた順</option>
+            <option value="dex">ポケモン順</option>
+            <option value="level">レベルが高い順</option>
+          </select>
+        </label>
+        <input type="search" id="boxSearch" class="search-night" placeholder="名前で探す" aria-label="ポケモンの名前で探す" enterkeyhint="search" autocomplete="off">
+      </div>
+      <div class="seg seg-night" id="boxType" role="group" aria-label="とくいなもので絞り込む"></div>
+      <div class="rk-chips" id="boxRanks" role="group" aria-label="ランクで絞り込む"></div>
+    </div>
+  </div>
+  <div class="sheet-body"><div class="bx-list" id="boxList"></div></div>
+</dialog>
+
+<dialog class="sheet" id="bulkView" aria-labelledby="bulkTitle">
+  <div class="sheet-head">
+    <div class="sheet-bar">
+      <button type="button" class="icon-btn" data-close aria-label="まとめて登録を閉じる"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2 id="bulkTitle">まとめて登録</h2>
+    </div>
+    <p class="sheet-lede">詳細画面のスクショを何枚でもまとめて選ぶと、1枚ずつ読み取ってボックスに入れます。</p>
+    <label class="drop" id="bulkPick" for="bulkFile">
+      <input id="bulkFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/*" multiple>
+      <span class="drop-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 22 22"><rect x="6.5" y="3.5" width="12" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 7v10.5a2 2 0 0 0 2 2h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12.5 8v6M9.5 11h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span>
+        <span class="drop-title">スクショをまとめて選ぶ</span>
+        <span class="drop-sub">1匹につき1枚。長い画面を上下2枚に分けたときは、2枚を続けて選びます。</span>
+      </span>
+    </label>
+    <p class="bulk-note" id="bulkNote" role="status"></p>
+  </div>
+  <div class="sheet-body">
+    <section class="card bulk-run" id="bulkRun" hidden aria-live="polite">
+      <div class="bulk-head" id="bulkHead"></div>
+      <div class="bulk-bar"><span id="bulkBar"></span></div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-small" id="bulkStop">止める</button>
+        <button type="button" class="btn btn-small btn-accent" id="bulkDone" data-go="box" hidden>ボックスを見る</button>
+      </div>
+      <div class="bk-list" id="bulkList"></div>
+    </section>
+    <section class="card bulk-help">
+      <h3 class="card-title">うまく入れるコツ</h3>
+      <ul>
+        <li>ポケモンの詳細画面（名前・SPから、サブスキル・せいかくまで）を1匹1枚で撮ります。</li>
+        <li>ボックスにもういる個体（同じポケモン・せいかく・サブスキル・食材）は、レベルなどを新しい方に更新します。</li>
+        <li>1枚につき数秒かかります。終わるまで、この画面を開いたままにしてください。</li>
+        <li>スクショはiPhoneの中で読み取り、どこにも送りません。</li>
+      </ul>
+    </section>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="transferView" aria-labelledby="transferTitle">
+  <div class="sheet-head">
+    <div class="sheet-bar">
+      <button type="button" class="icon-btn" data-close aria-label="引き継ぎコードを閉じる"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2 id="transferTitle">引き継ぎコード</h2>
+    </div>
+    <p class="sheet-lede">ボックスをコードにして、機種変更した新しいiPhoneや別のブラウザに移せます。ボックスはこのiPhoneの中にしかないので、ときどき書き出してメモなどに残しておくと安心です。</p>
+  </div>
+  <div class="sheet-body">
+    <section class="card">
+      <h3 class="card-title">書き出す</h3>
+      <p id="exportInfo"></p>
+      <div><button type="button" class="btn btn-accent" id="exportMake">コードを作る</button></div>
+      <div class="xfer-out" id="exportOut" hidden>
+        <textarea id="exportCode" class="code" rows="4" readonly aria-label="引き継ぎコード"></textarea>
+        <div class="btn-row">
+          <button type="button" class="btn" id="exportCopy">コピー</button>
+          <button type="button" class="btn" id="exportShare">共有…</button>
+          <button type="button" class="btn" id="exportSave">ファイルに保存</button>
+        </div>
+        <p class="note" id="exportMsg" role="status"></p>
+      </div>
+      <p class="note">コードに入るのは個体のデータ（ポケモン・レベル・せいかく・サブスキル・食材など）だけです。スクショは入りません。</p>
+    </section>
+    <section class="card">
+      <h3 class="card-title">読み込む</h3>
+      <textarea id="importCode" class="code" rows="4" placeholder="PSB から始まるコードを貼り付け" aria-label="読み込むコード"></textarea>
+      <div class="btn-row">
+        <button type="button" class="btn btn-accent" id="importCheck">読み込む</button>
+        <label class="btn" for="importFile">ファイルから<input id="importFile" type="file" accept=".txt,.json,text/plain,application/json" class="sr-only"></label>
+      </div>
+      <div class="xfer-out" id="importOut" hidden>
+        <p id="importInfo"></p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-accent" id="importMerge">ボックスに追加する</button>
+          <button type="button" class="btn" id="importReplace">ボックスを置き換える</button>
+        </div>
+        <p class="note">追加すると、同じ個体はレベルが高い方（同じなら新しい方）を残します。</p>
+      </div>
+      <p class="note" id="importMsg" role="status"></p>
+    </section>
+  </div>
+</dialog>
+
+<script src="assets/data.js?v=20261026-2"></script>
+<script src="assets/nito.js?v=20261026-2"></script>
+<script src="assets/engine.js?v=20261026-2"></script>
+<script src="vendor/tesseract/tesseract.min.js?v=20261026-2"></script>
+<script src="assets/ocr-parse.js?v=20261026-2"></script>
+<script src="assets/ing-icons.js?v=20261026-2"></script>
+<script src="assets/ocr.js?v=20261026-2"></script>
+<script src="assets/app.js?v=20261026-2"></script>
 </body>
 </html>
