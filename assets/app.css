@@ -183,6 +183,8 @@ main.wrap { padding-top: 18px; padding-bottom: calc(40px + env(safe-area-inset-b
 
 .specimen { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: start; }
 .specimen h2 { font-size: 26px; font-weight: 900; line-height: 1.25; }
+.spec-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.spec-pic { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex: none; background: #FEFEEE; box-shadow: 0 0 0 1px var(--line); }
 .specimen .lv { font-family: var(--f-display); font-size: 16px; font-weight: 700; color: var(--muted); margin-left: 6px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
@@ -542,14 +544,22 @@ dialog::backdrop { background: rgba(7, 11, 34, .58); }
 }
 .bx-open {
   appearance: none; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; min-width: 0;
-  display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 6px 10px 10px;
+  display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 10px 6px 10px 10px;
 }
 .bx-open:hover { background: var(--surface-2); }
 .bx-medal {
-  --g: var(--gC); width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
-  background: radial-gradient(circle at 50% 50%, var(--surface) 60%, transparent 61%), conic-gradient(var(--g) calc(var(--fill, 0) * 1%), var(--plain-soft) 0);
+  --g: var(--gC); width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 50%, var(--surface) 62%, transparent 63%), conic-gradient(var(--g) calc(var(--fill, 0) * 1%), var(--plain-soft) 0);
 }
 .bx-medal span { font-family: var(--f-display); font-weight: 900; font-size: 20px; line-height: 1; color: var(--g); }
+/* with the Pokémon's icon: the icon inside the ring, the rank as a small badge */
+.bx-medal.has-pic { position: relative; }
+.bx-medal.has-pic img { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); border-radius: 50%; object-fit: cover; background: #FEFEEE; }
+.bx-medal .bx-g {
+  position: absolute; right: -5px; bottom: -4px; min-width: 22px; height: 20px; padding: 0 5px; border-radius: 999px;
+  display: grid; place-items: center; font-size: 11.5px; letter-spacing: -.02em; color: var(--surface); background: var(--g);
+  box-shadow: 0 0 0 2px var(--surface);
+}
 .bx-medal span.two { font-size: 15px; letter-spacing: -.02em; }
 .bx-text { display: grid; gap: 3px; min-width: 0; }
 .bx-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 7px; min-width: 0; }
@@ -595,6 +605,7 @@ button.bk-row:hover { background: var(--surface-2); }
 .bk-text small { flex-basis: 100%; font-size: 12px; color: var(--muted); }
 .bk-g { --g: var(--gC); font-family: var(--f-display); font-weight: 900; color: var(--g); }
 .bk-wait { color: var(--faint); }
+.bk-pic { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: #FEFEEE; flex: none; margin-right: 2px; }
 .bk-mark { font-weight: 900; text-align: center; font-size: 15px; }
 .bk-row[data-state="ok"] .bk-mark { color: var(--good); }
 .bk-row[data-state="check"] .bk-mark { color: var(--warn); }

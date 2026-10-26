@@ -87,6 +87,9 @@
     autoFix: null,
     // the box entry shown in the checker (edits update it)
     boxId: null,
+    // the Pokémon's icon cut from the screenshot just read (saved with its box entry)
+    portrait: null,
+    portraitUrl: null,
     boxUi: Object.assign({ sort: 'ideal', type: '', rank: '' }, store.get(BUKEY, {})),
   };
 
@@ -307,10 +310,11 @@
       const mark = shown ? (shown === spNow ? '画面と一致' : `画面は ${shown}`) : '計算値';
       spBox = `<div class="sp-box"><div class="k">SP</div><div class="v num">${spNow}</div><div class="note">${mark}</div></div>`;
     }
+    const pic = state.source !== 'sample' ? portraitUrl() : null;
     $('cardSpecimen').innerHTML = `
       <div class="specimen">
         <div style="display:grid;gap:8px;min-width:0">
-          <h2 id="spName">${esc(sp.ja)}<span class="lv num">Lv.${ind.level}</span></h2>
+          <div class="spec-title">${pic ? `<img class="spec-pic" src="${pic}" alt="">` : ''}<h2 id="spName">${esc(sp.ja)}<span class="lv num">Lv.${ind.level}</span></h2></div>
           ${nick}
           <div class="chips">
             <span class="chip spec-${sp.spec}">${SPEC_TYPE[sp.spec]}</span>
@@ -1015,6 +1019,81 @@
     }).join('');
   }
 
+  // ---------- the Pokémon's icons, cut from the user's own screenshots (kept in IndexedDB by box entry id) ----------
+  const pics = (() => {
+    const urls = new Map();
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      if (!window.indexedDB) { rej(new Error('no indexedDB')); return; }
+      const r = indexedDB.open('pse-pics', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('pics');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    }).catch((e) => { dbp = null; throw e; }));
+    const run = async (mode, fn) => {
+      const db = await open();
+      return new Promise((res, rej) => {
+        const t = db.transaction('pics', mode);
+        const out = fn(t.objectStore('pics'));
+        t.oncomplete = () => res(out && out.result);
+        t.onerror = () => rej(t.error);
+        t.onabort = () => rej(t.error);
+      });
+    };
+    const setUrl = (id, blob) => { const u = urls.get(id); if (u) URL.revokeObjectURL(u); urls.set(id, URL.createObjectURL(blob)); };
+    const dropUrl = (id) => { const u = urls.get(id); if (u) { URL.revokeObjectURL(u); urls.delete(id); } };
+    let loaded = null;
+    return {
+      cached: (id) => urls.get(id) || null,
+      async put(id, blob) {
+        if (!id || !(blob instanceof Blob)) return;
+        setUrl(id, blob);
+        try { await run('readwrite', (s) => s.put(blob, id)); } catch { /* kept for this session only */ }
+      },
+      async del(id) {
+        dropUrl(id);
+        try { await run('readwrite', (s) => s.delete(id)); } catch { /* nothing stored */ }
+      },
+      // every stored icon into memory once (cheap: a few KB each)
+      loadAll() {
+        if (loaded) return loaded;
+        loaded = (async () => {
+          try {
+            const db = await open();
+            await new Promise((res) => {
+              const t = db.transaction('pics', 'readonly');
+              const req = t.objectStore('pics').openCursor();
+              req.onsuccess = () => { const c = req.result; if (c) { if (!urls.has(c.key) && c.value instanceof Blob) urls.set(c.key, URL.createObjectURL(c.value)); c.continue(); } };
+              t.oncomplete = res; t.onerror = res; t.onabort = res;
+            });
+          } catch { /* no icons */ }
+        })();
+        return loaded;
+      },
+      // drop the icons of entries no longer in the box
+      async prune(ids) {
+        const keep = new Set(ids);
+        try {
+          const keys = (await run('readonly', (s) => s.getAllKeys())) || [];
+          for (const k of keys) if (!keep.has(k)) await this.del(k);
+        } catch { /* nothing stored */ }
+        for (const k of [...urls.keys()]) if (!keep.has(k)) dropUrl(k);
+      },
+    };
+  })();
+  // the icon of the individual on screen (from the screenshot just read), or its box entry's
+  const portraitUrl = () => {
+    if (state.portraitUrl) return state.portraitUrl;
+    if (state.boxId && pics.cached(state.boxId)) return pics.cached(state.boxId);
+    const hit = boxFind(state.ind);
+    return hit ? pics.cached(hit.id) : null;
+  };
+  function setPortrait(blob) {
+    if (state.portraitUrl) URL.revokeObjectURL(state.portraitUrl);
+    state.portrait = blob instanceof Blob ? blob : null;
+    state.portraitUrl = state.portrait ? URL.createObjectURL(state.portrait) : null;
+  }
+
   // ---------- box: the individuals kept on this device ----------
   // One entry per individual: the same evolution line, nature, sub skills and ingredients is the same individual
   // (re-reading it later, at a higher level or evolved, updates the entry).
@@ -1064,6 +1143,7 @@
   const boxLinked = () => (state.boxId ? boxAll().find((x) => x.id === state.boxId) || null : null);
   function boxRemove(id) {
     boxPut(boxAll().filter((x) => x.id !== id));
+    pics.del(id);
     if (state.boxId === id) state.boxId = null;
   }
   function renderMenuCount() {
@@ -1097,6 +1177,7 @@
   });
 
   // ---------- box view ----------
+  let boxPicsLoaded = false;
   const RANKS = ['増田', 'SS', 'S', 'A', 'B', 'C', 'D'];
   const TYPE_FILTER = [['', 'すべて'], ['B', 'きのみ'], ['I', '食材'], ['S', 'スキル'], ['A', 'オール']];
   function boxRows() {
@@ -1149,7 +1230,9 @@
       return;
     }
     if (!list.length) { $('boxList').innerHTML = '<p class="bx-empty">条件に合う個体がありません。</p>'; return; }
-    $('boxList').innerHTML = `<p class="bx-note">ランクと％は Lv60 のとき（${state.evolve ? '進化前は最終進化の姿' : 'いまの姿'}）の理想個体比です。</p>` + list.map((r) => {
+    const noPic = rows.filter((r) => !pics.cached(r.o.id)).length;
+    const picNote = noPic && boxPicsLoaded ? `<p class="bx-note">アイコンがない${noPic}匹は、スクショを読み直すと付きます（「まとめて登録」でもOK。データはそのまま更新されます）。</p>` : '';
+    $('boxList').innerHTML = `<p class="bx-note">ランクと％は Lv60 のとき（${state.evolve ? '進化前は最終進化の姿' : 'いまの姿'}）の理想個体比です。</p>${picNote}` + list.map((r) => {
       const o = r.o;
       const g = o.g || '';
       const p = o.p != null ? o.p : null;
@@ -1157,9 +1240,14 @@
       const evo = r.as !== r.sp ? `<small class="bx-evo">→${esc(r.as.ja)}で評価</small>` : '';
       const nick = o.d && norm(o.d) !== norm(r.sp.ja) && !norm(o.d).startsWith(norm(r.sp.ja)) ? `<small class="bx-nick">${esc(o.d)}</small>` : '';
       const chk = o.ck ? '<small class="bx-check">要確認</small>' : '';
+      const pic = pics.cached(o.id);
+      const fill = Math.max(0, Math.min(100, p || 0));
+      const medal = pic
+        ? `<span class="bx-medal has-pic" data-g="${rankKey(g)}" style="--fill:${fill}"><img src="${pic}" alt="" decoding="async"><span class="bx-g">${esc(g || '–')}</span></span>`
+        : `<span class="bx-medal" data-g="${rankKey(g)}" style="--fill:${fill}"><span class="${g.length > 1 ? 'two' : ''}">${esc(g || '–')}</span></span>`;
       return `<div class="bx-item">
         <button type="button" class="bx-open" data-box="${esc(o.id)}">
-          <span class="bx-medal" data-g="${rankKey(g)}" style="--fill:${Math.max(0, Math.min(100, p || 0))}"><span class="${g.length > 1 ? 'two' : ''}">${esc(g || '–')}</span></span>
+          ${medal}
           <span class="bx-text">
             <span class="bx-name"><b>${esc(r.sp.ja)}</b><span class="bx-lv num">Lv.${o.lv}</span>${evo}${nick}${chk}</span>
             <span class="bx-nature">${esc(nat.ja)}<small>${natureLabel(nat)}</small></span>
@@ -1177,6 +1265,7 @@
     const ind = o && deserialize(o);
     if (!ind) return;
     state.ind = ind; state.flags = {}; state.source = 'box'; state.autoFix = null; state.historyT = null; state.boxId = id;
+    setPortrait(null);
     state.pending = null; state.speciesCands = null;
     state.evalLevel = ind.level >= 60 ? 70 : 60;
     closeSheet('boxView'); closeSheet('bulkView');
@@ -1597,6 +1686,7 @@
   function finishReading(read, flags, data) {
     const r = resolveData(data, { ind: read, flags });
     state.speciesCands = r.speciesCands || null;
+    setPortrait(data.portrait);
     if (r.error === 'species') {
       state.pending = { ind: r.ind, flags: r.flags, data };
       setStatus('ポケモンの種類を特定できませんでした。下の「読み取り結果を直す・手入力する」でポケモンを選ぶと、読み取った内容で評価します。', 'error');
@@ -1619,6 +1709,7 @@
       const hit = boxFind(ind);
       if (hit && ind.level >= hit.lv) {
         state.boxId = boxUpsert(ind, { ck: needsCheck(ind, r.unsure) }, hit.id).id;
+        if (state.portrait) pics.put(state.boxId, state.portrait);
         boxNote = 'ボックスの同じ個体も更新しました。';
       } else if (hit) {
         boxNote = `ボックスには同じ個体のLv.${hit.lv}のデータがあります。`;
@@ -1717,8 +1808,9 @@
   const BULK_MARK = { ok: '✓', check: '!', fail: '×', merged: '↓', wait: '', reading: '' };
   function bulkRowHtml(r) {
     const open = !bulk.running && (r.state === 'ok' || r.state === 'check') && r.id;
+    const pic = r.id && (r.state === 'ok' || r.state === 'check') ? pics.cached(r.id) : null;
     const body = `<span class="bk-no num">${r.k + 1}</span>
-      <span class="bk-text">${r.state === 'reading' ? '<span class="spinner dark" aria-hidden="true"></span>' : ''}${r.html || '<span class="bk-wait">待っています</span>'}</span>
+      <span class="bk-text">${r.state === 'reading' ? '<span class="spinner dark" aria-hidden="true"></span>' : ''}${pic ? `<img class="bk-pic" src="${pic}" alt="">` : ''}${r.html || '<span class="bk-wait">待っています</span>'}</span>
       <span class="bk-mark" aria-hidden="true">${BULK_MARK[r.state] || ''}</span>`;
     return open
       ? `<button type="button" class="bk-row" data-state="${r.state}" data-box="${esc(r.id)}">${body}</button>`
@@ -1782,6 +1874,7 @@
     bulk.rows = imgs.map((f, k) => ({ k, state: 'wait', html: '' }));
     renderBulk();
     keepAwake(true);
+    await pics.loadAll();
     // the previous screenshot's reading: its other half may come next
     let prev = null;
     try {
@@ -1832,6 +1925,7 @@
         }
         const ck = needsCheck(r.ind, r.unsure);
         const u = boxUpsert(r.ind, { ck });
+        if (data.portrait && (u.status !== 'kept' || !pics.cached(u.id))) await pics.put(u.id, data.portrait);
         Object.assign(row, { state: ck ? 'check' : 'ok', id: u.id, status: u.status, html: bulkResultHtml(r, u.status) + (merged ? '<small>（前のスクショと合わせて読み取り）</small>' : '') });
         prev = { data, k };
         renderBulk();
@@ -1962,6 +2056,7 @@
     const plan = planImport(transfer.items, replace);
     plan.list.forEach((x) => { x.gs = ''; });
     boxPut(plan.list);
+    if (replace) pics.prune(plan.list.map((x) => x.id));
     regradeList(BKEY);
     renderMenuCount();
     $('importOut').hidden = true;
@@ -2021,7 +2116,7 @@
     }
     if (t.dataset.go) {
       const go = t.dataset.go;
-      if (go === 'box') { renderBox(); openSheet('boxView'); }
+      if (go === 'box') { renderBox(); openSheet('boxView'); pics.loadAll().then(() => { boxPicsLoaded = true; if ($('boxView').open) renderBox(); }); }
       else if (go === 'bulk') { renderBulk(); openSheet('bulkView'); }
       else if (go === 'transfer') { renderTransfer(); openSheet('transferView'); }
       else if (go === 'method') { closeSheet('menu'); $('method').open = true; $('method').scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' }); }
@@ -2039,6 +2134,7 @@
     if (t.id === 'boxAdd' || t.id === 'boxUpdate') {
       if (!state.ind.sp || !state.ind.sp.supported) return;
       state.boxId = boxUpsert(state.ind, { ck: currentCheck() }, t.id === 'boxUpdate' ? t.dataset.id : undefined).id;
+      if (state.portrait) pics.put(state.boxId, state.portrait);
       renderAll();
       return;
     }
@@ -2124,6 +2220,7 @@
       const ind = o && deserialize(o);
       if (ind) {
         state.ind = ind; state.flags = {}; state.source = 'history'; state.autoFix = null; state.historyT = o.t; state.boxId = null;
+        setPortrait(null);
         state.evalLevel = ind.level >= 60 ? 70 : 60;
         fillEditor(); renderAll();
         $('cardSpecimen').scrollIntoView({ block: 'start' });
@@ -2209,6 +2306,7 @@
   renderHistory();
   renderMenuCount();
   renderAll();
+  pics.loadAll().then(() => { if (state.boxId || boxFind(state.ind)) renderAll(); });
 
   // home-screen install hint (iPhone Safari, not yet installed)
   const IKEY = 'pse:v1:installHintClosed';

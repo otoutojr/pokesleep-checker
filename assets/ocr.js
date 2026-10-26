@@ -327,6 +327,48 @@
     };
   }
 
+  // The Pokémon's own icon from the name card that stays at the top of the scrolled detail screen: the card has an
+  // orange tab on its left edge, and the icon sits on a pale disc at its left (measured on 1206px screenshots:
+  // tab x 1-42, card y 161-355, disc centre x 148.5 / card middle, radius 74). Returns a small JPEG, or null.
+  function portraitOf(canvas) {
+    try {
+      const W = canvas.width, H = canvas.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const x = Math.round(0.016 * W);
+      const yMax = Math.min(H, Math.round(1.2 * W));
+      const col = ctx.getImageData(x, 0, 1, yMax).data;
+      const orange = (i) => { const r = col[i], g = col[i + 1], b = col[i + 2]; return r > 200 && g > 80 && g < 175 && b > 50 && b < 150 && r - b > 90; };
+      let card = null;
+      for (let y = 0, start = -1; y <= yMax; y++) {
+        const on = y < yMax && orange(y * 4);
+        if (on && start < 0) start = y;
+        if (!on && start >= 0) {
+          const h = y - start;
+          if (h >= 0.12 * W && h <= 0.22 * W) { card = { y0: start, y1: y }; break; }
+          start = -1;
+        }
+      }
+      if (!card) return Promise.resolve(null);
+      const cx = 0.1231 * W, cy = (card.y0 + card.y1) / 2, r = 0.0614 * W;
+      // the pale disc must show around the icon (the Pokémon itself may cover part of it)
+      let disc = 0;
+      const N = 24;
+      for (let k = 0; k < N; k++) {
+        const a = (k / N) * 2 * Math.PI;
+        const p = ctx.getImageData(Math.round(cx + 0.9 * r * Math.cos(a)), Math.round(cy + 0.9 * r * Math.sin(a)), 1, 1).data;
+        if (p[0] > 236 && p[1] > 236 && p[2] > 205 && p[2] < 250 && p[0] - p[2] > 6) disc++;
+      }
+      if (disc < N * 0.3) return Promise.resolve(null);
+      const S = 96, rr = 0.97 * r;
+      const out = document.createElement('canvas');
+      out.width = S; out.height = S;
+      const o = out.getContext('2d');
+      o.imageSmoothingQuality = 'high';
+      o.drawImage(canvas, cx - rr, cy - rr, 2 * rr, 2 * rr, 0, 0, S, S);
+      return new Promise((res) => { try { out.toBlob((b) => res(b || null), 'image/jpeg', 0.86); } catch { res(null); } });
+    } catch { return Promise.resolve(null); }
+  }
+
   async function read(file, opts) {
     const onProgress = (opts && opts.onProgress) || null;
     progressFn = onProgress;
@@ -350,6 +392,7 @@
       }
       if (onProgress) onProgress({ status: 'counts' });
       try { res.ingredients = await readIngredientRow(base, res.lockLabels || []); } catch (e) { res.ingredients = []; }
+      res.portrait = await portraitOf(base);
       window.OCR.last = res; // kept for troubleshooting
       return res;
     } finally {
@@ -357,5 +400,5 @@
     }
   }
 
-  window.OCR = { read, warmup: () => getWorker() };
+  window.OCR = { read, portraitOf, warmup: () => getWorker() };
 })();

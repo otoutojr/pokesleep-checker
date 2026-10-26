@@ -403,7 +403,7 @@
   function merge(results) {
     if (results.length === 1) return results[0];
     const out = { ...results[0] };
-    for (const k of ['displayName', 'species', 'level', 'sp', 'helpTime', 'carry', 'mainSkill', 'mainSkillLevel', 'nature', 'natureUp', 'natureDown', 'ribbon']) {
+    for (const k of ['displayName', 'species', 'level', 'sp', 'helpTime', 'carry', 'mainSkill', 'mainSkillLevel', 'nature', 'natureUp', 'natureDown', 'ribbon', 'portrait']) {
       if (out[k] == null) { const r = results.find((x) => x[k] != null); if (r) out[k] = r[k]; }
     }
     if (out.spAlt == null) { const r = results.find((x) => x.sp === out.sp && x.spAlt != null); if (r) out.spAlt = r.spAlt; }
