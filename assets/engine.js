@@ -955,6 +955,182 @@ const PSE = (function () {
     return { pct: r.pct, rank: r.rank, tribe: r.tribe };
   }
 
+  // ---------- place among all individuals (rank X of N, and the chance of catching one at least as good) ----------
+  // One day = 24 hours of helping with items collected often and energy kept at 80% or more (help time x0.45), so
+  // only the helping speed and the specialty's own rate count. A "class" is the set of sub skills that change the
+  // specialty's daily amount, with the nature's effect on it; every other sub skill counts as "-".
+  const RANK_SUBS = {
+    S: ['HB', 'HSM', 'HSS', 'STM', 'STS'],
+    I: ['HB', 'HSM', 'HSS', 'IFM', 'IFS'],
+    B: ['HB', 'HSM', 'HSS', 'BFS', 'IFM', 'IFS'],
+    A: ['HB', 'HSM', 'HSS', 'BFS', 'IFM', 'IFS', 'STM', 'STS'],
+  };
+  const RANK_EFFECTS = { S: ['speed', 'skill'], I: ['speed', 'ing'], B: ['speed', 'ing'], A: ['speed', 'ing', 'skill'] };
+  /** the amount a class brings in a day: skills (S), ingredients (I), berries (B) or energy (A)
+   *  o: {level, ribbon, hbSelf, otherHB, slots, skillStr} */
+  function rankAmount(sp, o, nature, tot) {
+    const f = Math.min(tot.hs * 0.07 + (tot.hb ? o.hbSelf : 0) + 0.05 * (o.otherHB || 0), 0.35);
+    const freq = sp.freq * ftrunc4(((501 - o.level) / 500) * natSpeed(nature) * ribbonSpeed(sp, o.ribbon || 0) * (1 - f));
+    const helps = 86400 / (freq * 0.45);
+    const ir = ingRate(sp, nature, tot);
+    if (sp.spec === 'S') return helps * pityRate(sp, skillRate(sp, nature, tot));
+    if (sp.spec === 'B') return helps * (1 - ir) * berryCount(sp, tot);
+    const open = o.level < 30 ? 1 : o.level < 60 ? 2 : 3;
+    const slots = (o.slots || []).slice(0, open).filter((s) => s && s.count > 0);
+    if (sp.spec === 'I') return slots.length ? helps * ir * slots.reduce((a, s) => a + s.count, 0) / slots.length : 0;
+    const ingStr = slots.length ? slots.reduce((a, s) => a + (ING_STRENGTH[s.name] || 0) * s.count, 0) / slots.length : 0;
+    const skills = helps * pityRate(sp, skillRate(sp, nature, tot));
+    return helps * ((1 - ir) * berryCount(sp, tot) * berryStrength(sp.type, o.level) + ir * ingStr * ING_FACTOR) + skills * (o.skillStr || 0);
+  }
+  // nature classes: the effect raised and the effect lowered among the ones that count ('o' = any other), with
+  // the share of natures in each
+  function natureClasses(effects, natures) {
+    const keys = effects.concat(['o']);
+    const of = (e) => (effects.includes(e) ? e : 'o');
+    const out = [];
+    for (const u of keys) for (const d of keys) {
+      if (u === d && u !== 'o') continue;
+      const n = natures.filter((x) => of(x.up) === u && of(x.down) === d).length;
+      if (n) out.push({ up: u, down: d, p: n / natures.length, rep: { up: u === 'o' ? null : u, down: d === 'o' ? null : d } });
+    }
+    return out;
+  }
+  // Sub skill draw: each slot picks a color (white 53%, blue 33%, gold 14%; a gold-guaranteed slot is gold), then
+  // one sub skill of that color the Pokémon does not have yet, all equally likely.
+  const DRAW_COLOR = { white: 0.53, blue: 0.33, gold: 0.14 };
+  const COLOR_SUBS = { white: [], blue: [], gold: [] };
+  SUBSKILLS.forEach((s) => COLOR_SUBS[s.r].push(s.i));
+  const subDistCache = new Map();
+  /** [mask, chance] for every set of sub skills after k slots (mask: bits of SUBSKILLS); goldMask: slots that are gold */
+  function subDist(k, goldMask) {
+    const key = k + '|' + goldMask;
+    if (subDistCache.has(key)) return subDistCache.get(key);
+    let cur = new Map([[0, 1]]);
+    for (let slot = 0; slot < k; slot++) {
+      const next = new Map();
+      const colors = goldMask & (1 << slot) ? ['gold'] : ['white', 'blue', 'gold'];
+      for (const [mask, p] of cur) {
+        const free = {};
+        let tot = 0;
+        for (const c of colors) { free[c] = COLOR_SUBS[c].filter((i) => !(mask & (1 << i))); if (free[c].length) tot += DRAW_COLOR[c]; }
+        if (!tot) continue;
+        for (const c of colors) {
+          if (!free[c].length) continue;
+          const each = (p * DRAW_COLOR[c]) / tot / free[c].length;
+          for (const i of free[c]) { const m = mask | (1 << i); next.set(m, (next.get(m) || 0) + each); }
+        }
+      }
+      cur = next;
+    }
+    const arr = [...cur];
+    subDistCache.set(key, arr);
+    return arr;
+  }
+  // Sub Skill Seeds raise a sub skill one step (S to M) when the Pokémon does not have that M yet; with enough of
+  // them, every such sub skill ends up raised.
+  const SEED_UP = [['HSS', 'HSM'], ['STS', 'STM'], ['IFS', 'IFM'], ['INS', 'INM'], ['INM', 'INL'], ['SLS', 'SLM']];
+  function seedAll(mask) {
+    let m = mask;
+    for (const [a, b] of SEED_UP) {
+      const ia = SUB_BY_K[a].i, ib = SUB_BY_K[b].i;
+      if (m & (1 << ia) && !(m & (1 << ib))) m = (m & ~(1 << ia)) | (1 << ib);
+    }
+    return m;
+  }
+  // Friend medals: bronze makes slot 1 (Lv10) gold, silver slot 2 (Lv25, can be turned off), gold slot 3 (Lv50, can
+  // be turned off). The friend levels for the three medals depend on the Pokémon.
+  const MEDAL_STEPS = [[10, 40, 100], [10, 30, 60], [10, 25, 50], [10, 20, 40]];
+  const MEDAL_GROUPS = [
+    'フシギダネ ヒトカゲ ゼニガメ キャタピー トランセル コラッタ アーボ ピカチュウ サンド ピッピ ロコン プリン ディグダ ニャース コダック マンキー ガーディ マダツボミ イシツブテ ヤドン コイル ドードー ゴース カラカラ イーブイ ミニリュウ チコリータ ヒノアラシ ワニノコ ピチュー ピィ ププリン トゲピー ネイティ メリープ ウソッキー ウパー ソーナンス デルビル ヨーギラス キモリ アチャモ ミズゴロウ ラルトス ナマケロ ココドラ ゴクリン ナックラー チルット カゲボウズ ソーナノ タマザラシ タツベイ ナエトル ヒコザル ポッチャマ コリンク フワンテ ウソハチ マネネ ピンプク リオル グレッグル ユキカブリ ムンナ イシズマイ タマゲタケ ワシボン チゴラス バケッチャ オンバット アゴジムシ アブリー ヌイコグマ エレズン ニャオハ ホゲータ クワッス パモ カヌチャン アルクジラ',
+    'フシギソウ リザード カメール ラッタ アーボック サンドパン ダグトリオ ペルシアン ゴルダック オコリザル ウツドン ゴローン ヤドラン レアコイル ドードリオ ゴースト ガラガラ バリヤード ハクリュー ベイリーフ マグマラシ アリゲイツ トゲチック ネイティオ モココ ヌオー ヘルガー サナギラス ジュプトル ワカシャモ ヌマクロー キルリア ヤルキモノ コドラ マルノーム ビブラーバ チルタリス トドグラー コモルー ハヤシガメ モウカザル ポッタイシ ルクシオ フワライド ドクロッグ ユキノオー イワパレス モロバレル ウォーグル オンバーン デンヂムシ アブリボン キテルグマ ニャローテ アチゲータ ウェルカモ パモット ナカヌチャン ドオー',
+    'プクリン カモネギ イワーク ラッキー ガルーラ カイロス メタモン ヤミカラス ムウマ ツボツボ ヘラクロス ニューラ デリバード ヤミラミ クチート ジュペッタ アブソル ミカルゲ ルチャブル デデンネ キュワワー トゲデマル ミミッキュ ジジーロン ウッウ',
+    'フシギバナ リザードン カメックス ピクシー キュウコン ウインディ ウツボット ゴローニャ ゲンガー シャワーズ サンダース ブースター カイリュー ミュウツー ミュウ メガニウム バクフーン オーダイル デンリュウ エーフィ ブラッキー ヤドキング ハガネール ハピナス ライコウ エンテイ スイクン バンギラス ジュカイン バシャーモ ラグラージ サーナイト ケッキング ボスゴドラ フライゴン トドゼルガ ボーマンダ ラティアス ラティオス ドダイトス ゴウカザル エンペルト レントラー ムウマージ ドンカラス ルカリオ マニューラ ジバコイル トゲキッス リーフィア グレイシア エルレイド クレセリア ダークライ ムシャーナ ガチゴラス ニンフィア パンプジン クワガノン ストリンダー マスカーニャ ラウドボーン ウェーニバル パーモット デカヌチャン ハルクジラ',
+  ];
+  const MEDAL_OF = {};
+  MEDAL_GROUPS.forEach((names, g) => names.split(' ').forEach((n) => { if (!(n in MEDAL_OF)) MEDAL_OF[n] = g; }));
+  /** the friend levels of the three medals: {steps, known} (unknown Pokémon: guessed from the evolution stage) */
+  function medalSteps(sp) {
+    const g = MEDAL_OF[String(sp.ja).replace(/\s*[（(].*$/, '')];
+    if (g != null) return { steps: MEDAL_STEPS[g], known: true };
+    return { steps: MEDAL_STEPS[sp.el > 0 ? (sp.ev > 0 ? 1 : 0) : sp.ev > 0 ? 3 : 2], known: false };
+  }
+  /** Where an individual stands among all the classes of its Pokémon, and the chance that a new one is at least as good.
+   *  o: {level (60/70/80), ribbon, hbSelf (0.25: Helping Bonus valued with its whole team effect, 0.05: own speed only),
+   *      otherHB (other Helping Bonus in the team), seeds (Sub Skill Seeds raise S to M), slots, skillStr, friendLevel,
+   *      medalSp (the species befriended, for its medals; defaults to sp)} */
+  function rankStanding(sp, nature, subs, o) {
+    const keys = RANK_SUBS[sp.spec];
+    if (!keys || !sp.supported) return null;
+    const effects = RANK_EFFECTS[sp.spec];
+    const R = keys.map((key) => SUB_BY_K[key]);
+    const k = activeCount(o.level);
+    const ncls = natureClasses(effects, naturesFor(sp));
+    const n = 1 << R.length;
+    const amount = [];
+    for (let m = 0; m < n; m++) {
+      const tot = sumSubs(R.filter((_, j) => m & (1 << j)));
+      amount.push(ncls.map((c) => rankAmount(sp, o, c.rep, tot)));
+    }
+    const toR = (mask) => { let m = 0; R.forEach((s, j) => { if (mask & (1 << s.i)) m |= 1 << j; }); return m; };
+    // the individual's own class: its open sub skills (with seeds, every S that can become M has)
+    const open = activeSubs(subs, o.level);
+    let own = 0;
+    open.forEach((s) => { own |= 1 << s.i; });
+    const raised = o.seeds ? seedAll(own) : own;
+    const myM = toR(raised);
+    const of = (e) => (effects.includes(e) ? e : 'o');
+    const myC = Math.max(0, ncls.findIndex((c) => c.up === of(nature && nature.up) && c.down === of(nature && nature.down)));
+    const mine = amount[myM][myC];
+    const atLeast = (v) => v >= mine * (1 - 1e-9) - 1e-12;
+    let rank = 0;
+    for (let m = 0; m < n; m++) for (let c = 0; c < ncls.length; c++) if (atLeast(amount[m][c])) rank++;
+    // per set of counted sub skills: the share of natures that make it at least as good
+    const Q = new Float64Array(n);
+    for (let m = 0; m < n; m++) ncls.forEach((c, ci) => { if (atLeast(amount[m][ci])) Q[m] += c.p; });
+    const memo = {};
+    const chance = (gold) => {
+      const g = gold & ((1 << k) - 1);
+      if (memo[g] == null) {
+        let P = 0;
+        for (const [mask, p] of subDist(k, g)) P += p * Q[toR(o.seeds ? seedAll(mask) : mask)];
+        memo[g] = P;
+      }
+      return memo[g];
+    };
+    const probs = [0, 1, 3, 7].map(chance);
+    // expected catches from the friend level given: the bronze medal is always on from its level; silver and gold
+    // are used when they help
+    const medal = medalSteps(o.medalSp || sp);
+    const [bz, sv, gd] = medal.steps;
+    const best = (fl) => {
+      if (fl < bz) return chance(0);
+      let p = chance(1);
+      if (fl >= sv) p = Math.max(p, chance(3));
+      if (fl >= gd) p = Math.max(p, chance(5), chance(7));
+      return p;
+    };
+    const from = Math.max(1, Math.min(100, Math.round(o.friendLevel || 1)));
+    let E = 0, S = 1;
+    for (let fl = from; fl < gd; fl++) { E += S; S *= 1 - best(fl); }
+    const pEnd = best(Math.max(gd, from));
+    E = pEnd > 0 ? E + S / pEnd : Infinity;
+    // the sub skills as counted, slot by slot: the counted one (raised by seeds) or null for "-"
+    const shown = subs.map((s, i) => {
+      if (!s || i >= k) return null;
+      let t = s;
+      if (!(raised & (1 << t.i))) {
+        for (const [a, b] of SEED_UP) if (t.k === a && raised & (1 << SUB_BY_K[b].i) && !(own & (1 << SUB_BY_K[b].i))) t = SUB_BY_K[b];
+        if (t.k === 'INM' && raised & (1 << SUB_BY_K.INL.i) && !(own & (1 << SUB_BY_K.INL.i))) t = SUB_BY_K.INL;
+      }
+      return keys.includes(t.k) ? { sub: s, as: t } : null;
+    });
+    return {
+      kind: { S: 'skill', I: 'ing', B: 'berry', A: 'energy' }[sp.spec], amount: mine, rank, total: n * ncls.length, k,
+      probs, expected: E, from, medal: medal.steps, medalKnown: medal.known,
+      natureClass: { up: ncls[myC].up, down: ncls[myC].down }, shown, effects, relevant: R,
+    };
+  }
+
   // ---------- evaluate ----------
   function deriveBase(ind) {
     const sp = ind.sp;
@@ -1076,6 +1252,7 @@ const PSE = (function () {
   return {
     loadData, evaluate, checkReading, computeSP, frequency, slotOptions, sumSubs, activeSubs, value, makeContext, energySegments, deriveBase, naturesFor, formForNature,
     idealRatio, idealStanding, idealQuick, dRank, dTribe, isClassified, setTribePicks, D_TABLE, D_TRIBES, D_RANKS, D_REF, D_W,
+    rankStanding, medalSteps,
     NATURES, NATURE_BY_JA, NEUTRAL, SUBSKILLS, SUB_BY_JA, SUB_BY_K, UNLOCK, MAX_LEVEL, EFFECT_JA, SPEC_JA, BERRY_JA,
     ING_STRENGTH, maxSkillLevel, berryStrength, skillValue,
     get SPECIES() { return SPECIES; }, get SPECIES_BY_JA() { return SPECIES_BY_JA; },

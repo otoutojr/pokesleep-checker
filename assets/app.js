@@ -50,6 +50,7 @@
   const BKEY = 'pse:v1:box';
   const BUKEY = 'pse:v1:boxui';
   const TKEY = 'pse:v1:tribe';
+  const PLKEY = 'pse:v1:place';
   // the pattern used until だいふく's checker classifies a Pokémon (by evolution line): Mismagius as ⑦, since
   // Berry Finding S adds about 1.8x the energy of Skill Trigger M for it in the reference calculator
   const TRIBE_DEFAULT = { 200: 'SB' };
@@ -96,6 +97,8 @@
     portraitUrl: null,
     boxUi: Object.assign({ sort: 'ideal', type: '', rank: '' }, store.get(BUKEY, {})),
     tribePick: Object.assign({}, TRIBE_DEFAULT, store.get(TKEY, {})),
+    // the place card's settings: level, Helping Bonus counted as the whole team's +25% or its own +5%, seeds, friend level
+    place: Object.assign({ level: 80, hb: 25, seeds: true, fl: 1 }, store.get(PLKEY, {})),
   };
   PSE.setTribePicks(state.tribePick);
 
@@ -522,6 +525,67 @@
       <p class="note">ランクの目安（${esc(d.tribeJa)}・Lv${d.table}の基準）: ${scale}</p>`;
   }
 
+  // ---------- render: place among all individuals of the Pokémon ----------
+  const PLACE_KIND = { skill: ['スキル回数', '回'], ing: ['食材の数', '個'], berry: ['きのみの数', '個'], energy: ['1日のエナジー', ''] };
+  const EFFECT_SHORT = { speed: 'おてつだいスピード', skill: 'スキル発生確率', ing: '食材確率', energy: 'げんき回復量', exp: 'EXP' };
+  const fmtOdds = (p) => (p <= 0 ? '0%' : p < 0.00001 ? '0.001%未満' : (Math.round(p * 100000) / 1000).toFixed(3) + '%');
+  function renderPlace(ind) {
+    const el = $('cardPlace');
+    if (!el) return;
+    const P = state.place;
+    let r = null;
+    try {
+      const trig = ind.sp.spec === 'A' && ind.env && ind.env.skillTrigger ? ind.env.skillTrigger(P.level, PSE.maxSkillLevel(ind.sp.skill)) : null;
+      r = PSE.rankStanding(ind.sp, ind.nature, ind.subs, {
+        level: P.level, ribbon: ind.ribbon || 0, hbSelf: P.hb / 100, otherHB: 0, seeds: P.seeds, slots: ind.slots,
+        skillStr: trig ? trig.str : 0, friendLevel: P.fl, medalSp: state.ind.sp,
+      });
+    } catch (e) { r = null; }
+    if (!r) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    const [label, unit] = PLACE_KIND[r.kind];
+    const amount = r.kind === 'energy' ? fmtInt(r.amount) : fmt2(r.amount);
+    const subsTxt = r.shown.map((x, i) => {
+      if (i >= r.k) return null;
+      if (!x) return '-';
+      return x.as === x.sub ? SUB_SHORT[x.sub.k] : `${SUB_SHORT[x.sub.k]}→${SUB_SHORT[x.as.k].replace(/^.*?([SML])$/, '$1')}`;
+    }).filter((x) => x != null).join(' / ');
+    const n = ind.nature;
+    let natTxt = `${esc(n.ja)}：補正なし`;
+    if (n.up) {
+      const marks = [[n.up, '▲'], [n.down, '▼']].map(([e, m]) => ({ t: EFFECT_SHORT[e] + m, on: r.effects.includes(e) }));
+      const on = marks.filter((x) => x.on).map((x) => x.t), off = marks.filter((x) => !x.on).map((x) => x.t);
+      natTxt = `${esc(n.ja)}：${on.length ? on.join('・') : '順位に関係する補正なし'}${off.length ? `<small>（${off.join('・')}は関係なし）</small>` : ''}`;
+    }
+    const names = ['金確定なし', '金1確定', '金2確定', '金3確定'];
+    const odds = r.probs.map((p, i) => `<div><dt>${names[i]}</dt><dd class="num">${fmtOdds(p)}</dd></div>`).join('');
+    const [bz, sv, gd] = r.medal;
+    const exp = Number.isFinite(r.expected)
+      ? `フレンドレベル${r.from}から捕まえていくと、平均 <b class="num">${r.expected >= 1000 ? fmtInt(r.expected) : fmt1(r.expected)}匹</b>（1匹あたり${fmtOdds(1 / r.expected)}）で同じかそれ以上の個体が出る見込みです。`
+      : 'この組み合わせ以上の個体は、計算上は出ません。';
+    const medalTxt = `${esc(state.ind.sp.ja)}のメダルはフレンドレベル${bz}・${sv}・${gd}（銅・銀・金）${r.medalKnown ? '' : '（分からないので進化の段階から推定）'}。銅で1枠目が金になり、銀・金で2枠目・3枠目も金にできます。`;
+    const seg = (key, list) => list.map(([v, t]) => `<button type="button" data-place="${key}" data-v="${v}" aria-pressed="${String(P[key]) === String(v)}">${t}</button>`).join('');
+    el.innerHTML = `
+      <h2 class="card-title" id="plTitle">${esc(ind.sp.ja)}の中での順位</h2>
+      <p class="pl-big"><b class="num">${r.rank.toLocaleString('ja-JP')}</b>位<small> / ${r.total.toLocaleString('ja-JP')}通り中</small></p>
+      <dl class="pl-facts">
+        <div><dt>${label}</dt><dd><b class="num">${amount}</b>${unit}<small>／日（Lv${P.level}）</small></dd></div>
+        <div><dt>サブスキル</dt><dd>${esc(subsTxt)}</dd></div>
+        <div><dt>せいかく</dt><dd>${natTxt}</dd></div>
+      </dl>
+      <h3 class="pl-sub">同じかそれ以上の個体が出る確率（1匹あたり）</h3>
+      <dl class="kv pl-odds">${odds}</dl>
+      <p class="pl-exp">${exp}</p>
+      <p class="note">${medalTxt}</p>
+      <div class="pl-opts">
+        <div class="field"><span class="lab">計算レベル</span><div class="seg" role="group" aria-label="計算レベル">${seg('level', [[60, 'Lv60'], [70, 'Lv70'], [80, 'Lv80']])}</div></div>
+        <div class="field"><span class="lab">おてつだいボーナス</span><div class="seg" role="group" aria-label="おてつだいボーナスの数え方">${seg('hb', [[25, 'チーム全体（+25%）'], [5, '自分だけ（+5%）']])}</div></div>
+        <div class="field"><span class="lab">サブスキルのたね</span><div class="seg" role="group" aria-label="サブスキルのたね">${seg('seeds', [[true, 'SをMにする'], [false, '使わない']])}</div></div>
+        <div class="field pl-fl"><label class="lab" for="plFL">いまのフレンドレベル</label><input id="plFL" type="number" inputmode="numeric" min="1" max="100" value="${P.fl}"></div>
+      </div>
+      <p class="note">24時間こまめに回収し、げんきは80%以上のまま（おてつだい時間×0.45）の1日で数えます。順位は、${label.replace('1日の', '')}に効くサブスキル（${r.relevant.map((s) => SUB_SHORT[s.k]).join('・')}）の有無と、せいかくの${r.effects.map((e) => EFFECT_SHORT[e]).join('・')}の上下で分けた${r.total.toLocaleString('ja-JP')}通りの中での位置で、同じ値の組み合わせも含めて数えています。確率は、サブスキルの色が1枠ごとに白53%・青33%・金14%で決まり、同じ色の中から持っていないものが均等に出るとして計算しています。「SをMにする」は、サブスキルのたねで上げられるS（スピードS・スキル確率S・食材確率S）をすべてMにした個体として比べます。</p>`;
+  }
+
   // ---------- render: why ----------
   // pt: share of the ideal individual's total (%)
   function verdictFor(pt, sub) {
@@ -797,7 +861,7 @@
     const sp = ind.sp;
     const when = sp.arrival ? `（${sp.arrival.replace(/-/g, '/')}登場予定）` : '';
     $('cardVerdict').innerHTML = `<p class="summary">${esc(sp.ja)}はまだデータがそろっていないため評価できません${when}。データが公開されたら対応します。</p>`;
-    ['cardWhy', 'cardDay', 'cardCheck'].forEach((id) => { $(id).innerHTML = ''; $(id).hidden = true; });
+    ['cardWhy', 'cardDay', 'cardCheck', 'cardPlace'].forEach((id) => { $(id).innerHTML = ''; $(id).hidden = true; });
   }
 
   // ---------- render orchestration ----------
@@ -824,6 +888,7 @@
     const ev = PSE.evaluate(ind, state.evalLevel);
     evCache[state.evalLevel] = ev;
     renderVerdict(ind, ev, evCache, levels);
+    renderPlace(ind);
     renderNumbers(ind, state.evalLevel);
     renderWhy(ind, ev);
     renderCheck(raw, chk);
@@ -2159,6 +2224,13 @@
       renderAll();
       return;
     }
+    if (t.dataset.place) {
+      const key = t.dataset.place, v = t.dataset.v;
+      state.place = Object.assign({}, state.place, { [key]: key === 'seeds' ? v === 'true' : +v });
+      store.set(PLKEY, state.place);
+      renderPlace(withSettings(state.ind));
+      return;
+    }
     if (t.dataset.tribe && t.dataset.anc) {
       state.tribePick = Object.assign({}, state.tribePick, { [t.dataset.anc]: t.dataset.tribe });
       store.set(TKEY, state.tribePick);
@@ -2266,6 +2338,13 @@
   document.addEventListener('change', (e) => {
     const id = e.target && e.target.id;
     if (id === 'boxSort') { state.boxUi.sort = e.target.value; saveBoxUi(); renderBox(); return; }
+    if (id === 'plFL') {
+      const v = Math.max(1, Math.min(100, Math.round(+e.target.value || 1)));
+      state.place = Object.assign({}, state.place, { fl: v });
+      store.set(PLKEY, state.place);
+      renderPlace(withSettings(state.ind));
+      return;
+    }
     if (id === 'bulkFile') { const f = e.target.files; runBulk(f); e.target.value = ''; return; }
     if (id === 'importFile') {
       const f = e.target.files && e.target.files[0];
