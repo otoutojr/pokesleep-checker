@@ -492,7 +492,7 @@
     if (opts.length < 2) return '';
     const btns = opts.map((k) => `<button type="button" data-tribe="${k}" data-anc="${ind.sp.anc}" aria-pressed="${d.tribe === k}">${PSE.D_TRIBES[k][0]}${esc(PSE.D_TRIBES[k][1])}</button>`).join('');
     return `<div class="tribe-pick">
-      <p>だいふくさんのチェッカーは、${esc(ind.sp.ja)}をまだ9分類のどれにするか決めていません。ここでは仮の分類を選べます（ボックスのランクにも反映）。</p>
+      <p>${esc(ind.sp.ja)}は9分類のどれに入るかがまだ決まっていないので、仮の分類を選べます（ボックスのランクにも反映）。</p>
       <div class="seg" role="group" aria-label="仮の分類">${btns}</div>
       ${d.tribe === 'SB' ? '<p class="note">⑦はきのみの量も重く見て、きのみの数Sに+11を足す分類です。</p>' : d.tribe === 'S' ? '<p class="note">⑨はスキルの回数を重く見る分類で、きのみの数Sはほとんど評価されません。</p>' : ''}
     </div>`;
@@ -519,7 +519,7 @@
       ${roleBars(ind, ev)}
       <p class="summary">${esc(summaryText(ind, ev))}</p>
       <div class="lv-strip" id="lvStrip" role="group" aria-label="評価するレベル" style="grid-template-columns:repeat(${levels.length},minmax(0,1fr))">${stripHtml(ind, evs, levels)}</div>
-      <p class="note">ランクの目安（だいふくさんの個体値チェッカーの${esc(d.tribeJa)}・Lv${d.table}基準）: ${scale}</p>`;
+      <p class="note">ランクの目安（${esc(d.tribeJa)}・Lv${d.table}の基準）: ${scale}</p>`;
   }
 
   // ---------- render: why ----------
@@ -680,7 +680,7 @@
       <div class="rows">${ingRows}</div>
       ${ind.slots.some((x, i) => state.flags['ing' + i] && ind.level < [1, 30, 60][i]) ? '<p class="note">まだ解放されていない食材のうち、アイコンがはっきり見えなかった枠は、仮の組み合わせで計算しています。違うときは「読み取り結果を直す」で選び直してください。</p>' : ''}
       <p class="note">この食材の組み合わせは、Lv60での食材の合計エナジーで ${pi.total}通り中 ${pi.rank}位です。</p>
-      <p class="ideal">100%の基準（だいふくさんの方式・Lv${L}で開くぶん）: きのみ＝<b>${refText(refs.k)}</b>、食材＝<b>${refText(refs.f)}</b>、スキル＝<b>${refText(refs.s)}</b></p>
+      <p class="ideal">100%の基準（Lv${L}で開くぶん）: きのみ＝<b>${refText(refs.k)}</b>、食材＝<b>${refText(refs.f)}</b>、スキル＝<b>${refText(refs.s)}</b></p>
       <p class="note">${BASIS[spec]}がいちばん多くなる組み合わせは <b>${esc(best.nature.ja)}</b> ＋ ${idealSubs} です。</p>`;
   }
 
@@ -740,7 +740,7 @@
       </dl>
       <h3 class="card-title">レベルごとの見込み</h3>
       <div class="lvtable-wrap" id="lvTable"></div>
-      <p class="note">${ind.from ? `${esc(ind.from.ja)}を${esc(ind.sp.ja)}に進化させた姿の数値です。` : ''}nitoyon さんの「ポケスリ 個体値計算機」と同じ計算です（げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}）。ランク（理想個体比）は、だいふくさんのチェッカーと同じ別の計算で出しています（「評価のしくみ」を参照）。${/^Tasty Chance|Mystical Fire/.test(ind.sp.skill) ? '料理の大成功確率が上がるぶんは、1日のエナジーには入れていません。' : ''}${RAENONX_DATA.has(ind.sp.en) ? `${esc(ind.sp.ja)}のデータ（おてつだい時間・食材とスキルの確率・食材・最大所持数）${ind.sp.skill === 'Cooking Advance S (Mystical Fire)' ? 'とマジカルフレイムの効果量' : ''}の出典: <a href="https://pks.raenonx.cc/" target="_blank" rel="noopener">RaenonX ポケスリ攻略ツール</a>（登場したばかりのため、確率はこれから少し変わることがあります）。` : ''}</p>`;
+      <p class="note">${ind.from ? `${esc(ind.from.ja)}を${esc(ind.sp.ja)}に進化させた姿の数値です。` : ''}計算の前提は、げんきオール1日3回・料理3回・レシピボーナス25%・レシピLv30・起きている間は3時間ごとに回収・睡眠スコア${state.sleepScore}・好みのきのみなし${state.maxSkill ? '・メインスキルはたねで最大レベル' : ''}です。ランク（理想個体比）は別の計算で出しています（「評価のしくみ」を参照）。${/^Tasty Chance|Mystical Fire/.test(ind.sp.skill) ? '料理の大成功確率が上がるぶんは、1日のエナジーには入れていません。' : ''}${RAENONX_DATA.has(ind.sp.en) ? `${esc(ind.sp.ja)}は登場したばかりのため、確率はこれから少し変わることがあります。` : ''}</p>`;
     renderLevelTable(ind);
   }
   function renderLevelTable(ind) {
