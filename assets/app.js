@@ -549,7 +549,7 @@
       if (i >= r.k) return null;
       if (!x) return '-';
       return x.as === x.sub ? SUB_SHORT[x.sub.k] : `${SUB_SHORT[x.sub.k]}→${SUB_SHORT[x.as.k].replace(/^.*?([SML])$/, '$1')}`;
-    }).filter((x) => x != null).join(' / ');
+    }).filter((x) => x != null).map((t, i, a) => `<span class="nw">${esc(t)}${i < a.length - 1 ? ' /' : ''}</span>`).join(' ');
     const n = ind.nature;
     let natTxt = `${esc(n.ja)}：補正なし`;
     if (n.up) {
@@ -570,7 +570,7 @@
       <p class="pl-big"><b class="num">${r.rank.toLocaleString('ja-JP')}</b>位<small> / ${r.total.toLocaleString('ja-JP')}通り中</small></p>
       <dl class="pl-facts">
         <div><dt>${label}</dt><dd><b class="num">${amount}</b>${unit}<small>／日（Lv${P.level}）</small></dd></div>
-        <div><dt>サブスキル</dt><dd>${esc(subsTxt)}</dd></div>
+        <div><dt>サブスキル</dt><dd>${subsTxt}</dd></div>
         <div><dt>せいかく</dt><dd>${natTxt}</dd></div>
       </dl>
       <h3 class="pl-sub">同じかそれ以上の個体が出る確率（1匹あたり）</h3>

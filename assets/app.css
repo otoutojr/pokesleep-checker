@@ -651,6 +651,7 @@ label.btn { display: inline-flex; align-items: center; }
 .pl-facts dd { margin: 0; font-size: 14px; line-height: 1.55; min-width: 0; }
 .pl-facts dd b { font-family: var(--f-display); font-weight: 900; font-size: 18px; }
 .pl-facts dd small { font-size: 12px; color: var(--muted); }
+.pl-facts .nw { white-space: nowrap; }
 .pl-sub { font-family: var(--f-body); font-size: 13px; font-weight: 700; color: var(--ink); margin: 2px 0 -4px; }
 .pl-odds dd { font-family: var(--f-display); font-weight: 900; font-size: 20px; }
 .pl-exp { font-size: 14px; line-height: 1.65; }
